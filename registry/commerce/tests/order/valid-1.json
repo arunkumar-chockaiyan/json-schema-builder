@@ -1,0 +1,17 @@
+{
+  "id": "8f14e45f-ceea-467e-9575-8e18c1eae7a3",
+  "createdAt": "2026-09-19T12:00:00Z",
+  "tenantId": "tenant-001",
+  "amount": 129.99,
+  "currency": "USD",
+  "contact": {
+    "name": "Jane Doe",
+    "email": "jane@example.com",
+    "address": {
+      "line1": "123 Main St",
+      "city": "Springfield",
+      "postalCode": "62704",
+      "country": "US"
+    }
+  }
+}

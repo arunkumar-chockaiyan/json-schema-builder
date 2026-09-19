@@ -1,0 +1,8 @@
+{
+  "families": [
+    {
+      "name": "commerce",
+      "description": "Commerce domain schemas: orders, carts, and related shared components."
+    }
+  ]
+}

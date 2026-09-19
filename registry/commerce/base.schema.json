@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "commerce.base",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier for this record."
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this record was created."
+    },
+    "tenantId": {
+      "type": "string",
+      "description": "Owning tenant identifier."
+    }
+  },
+  "required": ["id", "createdAt", "tenantId"]
+}

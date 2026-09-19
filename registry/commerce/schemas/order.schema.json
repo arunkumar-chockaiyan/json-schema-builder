@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "commerce.order",
+  "type": "object",
+  "properties": {
+    "amount": {
+      "type": "number",
+      "minimum": 0
+    },
+    "currency": {
+      "type": "string",
+      "description": "ISO 4217 currency code, e.g. USD."
+    },
+    "contact": {
+      "$ref": "components/contact.schema.json"
+    }
+  },
+  "required": ["amount", "currency", "contact"]
+}
