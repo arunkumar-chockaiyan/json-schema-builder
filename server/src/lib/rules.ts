@@ -1,12 +1,14 @@
-// Conditional rule builder: compiles a structured, round-trippable rule list
-// (`x-rules` on the raw schema) into standard JSON Schema `allOf`/`if`/`then`
-// blocks for the resolved output. Each rule is a single independent
-// WHEN/THEN condition — no AND/OR groups — matching the builder's UI model.
+// This is the conditional rule compiler. It compiles a structured,
+// round-trippable rule list (`x-rules` on the raw schema) into standard
+// JSON Schema `allOf`/`if`/`then` blocks for the resolved output. Each rule
+// is a single, independent WHEN/THEN condition. There are no AND/OR groups,
+// matching the rule builder's UI model.
 //
-// Fields are dot-paths (e.g. "contact.email"), same convention used
-// elsewhere in this codebase (x-example-source comment paths, JsonTree's
-// TreeNode.path). Nesting is expressed the only way JSON Schema allows it —
-// nested `properties` keywords — via nestAtParent/nestPropertyValue below.
+// A field is a dot-path, for example "contact.email". This is the same
+// convention used elsewhere in this codebase: x-example-source comment
+// paths, and JsonTree's TreeNode.path. JSON Schema expresses nesting only
+// one way: nested `properties` keywords. nestAtParent and nestPropertyValue
+// below build that nesting.
 
 import { RegistryError } from "../types.js";
 
@@ -34,11 +36,12 @@ export interface Rule {
   };
   then: {
     require?: string[];
-    // Fields that must NOT be present when this rule's condition holds
-    // (e.g. "if transactionType = CHECK, then creditCardNumber is not a
-    // valid field"). Compiles straight to `not: { required: [field] } }` —
-    // a direct JSON Schema concept, distinct from "optional" (every field is
-    // optional by default already; this is "forbidden under this condition").
+    // Fields that must NOT be present when this rule's condition holds. For
+    // example: "if transactionType = CHECK, then creditCardNumber is not a
+    // valid field." This compiles straight to `not: { required: [field] } }`.
+    // That is a direct JSON Schema concept. It is distinct from "optional":
+    // every field is already optional by default. This is "forbidden under
+    // this condition."
     forbid?: string[];
     constrain?: {
       field: string;
@@ -51,13 +54,14 @@ function pathSegments(field: string): string[] {
   return field.split(".");
 }
 
-// Every field a rule can reference (when.field, then.require[],
-// then.forbid[], then.constrain.field) must already be a declared field of
-// the schema (base ∪ own, at any depth). Throws a RegistryError (400)
-// naming the first offending field, so a bad rule blocks save with a clear
-// message rather than being silently written. `availableFields` is the
-// flattened set of every valid dot-path (see resolver.ts's
-// flattenFieldPaths), not just top-level keys.
+// A rule can reference a field in four places: when.field, then.require[],
+// then.forbid[], and then.constrain.field. Every referenced field must
+// already be a declared field of the schema: base fields or the schema's
+// own fields, at any depth. If a field is not declared, this throws a
+// RegistryError (400) naming the first offending field. This blocks the
+// save with a clear message, instead of silently writing a bad rule.
+// `availableFields` is the flattened set of every valid dot-path (see
+// resolver.ts's flattenFieldPaths), not just the top-level keys.
 export function validateRules(rules: Rule[], availableFields: Set<string>): void {
   for (const rule of rules) {
     const referenced = [
@@ -96,8 +100,8 @@ export function compileRules(rules: Rule[]): Record<string, unknown>[] {
     }
 
     if (rule.then.forbid && rule.then.forbid.length > 0) {
-      // "none of these fields may be present" = not (any of them required),
-      // each forbidden field nested at its own parent level.
+      // "None of these fields may be present" means: not (any of them
+      // required). Each forbidden field nests at its own parent level.
       const anyOf = rule.then.forbid.map((field) => {
         const segments = pathSegments(field);
         const last = segments[segments.length - 1];
@@ -132,13 +136,16 @@ function buildCondition(when: Rule["when"]): Record<string, unknown> {
 }
 
 // Wraps `leafAtParentLevel` so it applies at the schema level of the
-// *parent* of the deepest path segment, threading through nested
-// `properties` for every ancestor. When `requireAncestors` is true, each
-// intermediate segment is also asserted present (via `required`) — used for
-// WHEN conditions and THEN require, where a missing ancestor should mean
-// "doesn't apply." When false (THEN forbid, WHEN "absent"), a missing
-// ancestor vacuously satisfies the constraint — the correct reading of "not
-// present."
+// *parent* of the deepest path segment. Threads through nested `properties`
+// for every ancestor.
+//
+// When `requireAncestors` is true, each intermediate segment is also
+// asserted present, via `required`. This is used for WHEN conditions and
+// THEN require, where a missing ancestor should mean "does not apply."
+//
+// When `requireAncestors` is false (THEN forbid, WHEN "absent"), a missing
+// ancestor vacuously satisfies the constraint. This is the correct reading
+// of "not present."
 function nestAtParent(path: string[], leafAtParentLevel: Record<string, unknown>, requireAncestors: boolean): Record<string, unknown> {
   const ancestors = path.slice(0, -1);
   return ancestors.reduceRight<Record<string, unknown>>(
@@ -149,18 +156,20 @@ function nestAtParent(path: string[], leafAtParentLevel: Record<string, unknown>
 }
 
 // Wraps `valueSchema` so it applies as the schema of the field at the very
-// end of `path`, threading `properties` through every segment including the
-// last. Used for THEN constrain's enum and (nested inside buildCondition's
-// own nestAtParent call) a WHEN field's value constraint.
+// end of `path`. Threads `properties` through every segment, including the
+// last. Used for THEN constrain's enum. Also used, nested inside
+// buildCondition's own nestAtParent call, for a WHEN field's value
+// constraint.
 function nestPropertyValue(path: string[], valueSchema: Record<string, unknown>): Record<string, unknown> {
   return path.reduceRight<Record<string, unknown>>((acc, segment) => ({ properties: { [segment]: acc } }), valueSchema);
 }
 
-// Recursively merges THEN fragments that may collide on shared ancestor
-// paths (e.g. requiring both "contact.email" and "contact.phone" both need
-// properties.contact...). `required` arrays concatenate+dedupe, `properties`
-// objects merge key-by-key (recursing into shared keys), everything else is
-// last-write-wins (there's normally at most one `not` fragment, from forbid).
+// Recursively merges THEN fragments that may collide on a shared ancestor
+// path. For example, requiring both "contact.email" and "contact.phone"
+// both need properties.contact. `required` arrays are concatenated and
+// deduplicated. `properties` objects merge key by key, recursing into
+// shared keys. Everything else is last-write-wins. There is normally at
+// most one `not` fragment, from forbid.
 function mergeSchemaFragments(fragments: Record<string, unknown>[]): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const fragment of fragments) {

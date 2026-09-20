@@ -1,12 +1,13 @@
-// Component extraction: pull an inline object field (from a schema or from
-// base, at any depth) out into its own reusable components/<name>.schema.json
-// file, replacing the field's inline definition with a $ref.
+// Component extraction pulls an inline object field out into its own
+// reusable components/<name>.schema.json file. The field's inline
+// definition is replaced with a $ref. The source field can come from a
+// schema or from base, at any depth.
 //
-// This deliberately does NOT go through the schema PUT/derivation pipeline
-// (server/src/routes/schemas.ts) — that pipeline fully replaces `properties`
-// from x-example-source on every save, so a $ref written that way would be
-// silently reverted the next time someone applies the (unchanged) example.
-// Extraction instead reads/patches raw files directly.
+// Extraction does NOT go through the schema PUT/derivation pipeline
+// (server/src/routes/schemas.ts). That pipeline fully replaces `properties`
+// from x-example-source on every save. A $ref written that way would be
+// silently reverted the next time someone applies the same, unchanged
+// example. So extraction reads and patches raw files directly instead.
 
 import {
   assertSafeSegment,
@@ -30,9 +31,9 @@ export type ExtractionSource =
 interface OwnerLocation {
   owner: ExtractionSource;
   raw: Record<string, unknown>;
-  // Path to the target field *within* `raw`'s properties tree (may cross
-  // several nested inline objects, but never crosses a $ref — that's a new
-  // owner). Always ends with the field's own key.
+  // Path to the target field *within* `raw`'s properties tree. This path
+  // may cross several nested inline objects, but never crosses a $ref. A
+  // $ref means a new owner. The path always ends with the field's own key.
   localPath: string[];
 }
 
@@ -48,11 +49,11 @@ async function writeSource(family: string, source: ExtractionSource, content: un
   return writeComponent(family, source.name, content);
 }
 
-// Walks `path` through `source`'s raw properties, transparently crossing
-// $ref boundaries into whichever component actually owns the deeper field.
-// The frontend never needs to know this happens — it just picks a path off
-// the already-resolved (fully dereferenced) tree, same as the rule builder's
-// field picker.
+// Walks `path` through `source`'s raw properties. Crosses $ref boundaries
+// transparently, into whichever component actually owns the deeper field.
+// The frontend never needs to know this happens. It just picks a path from
+// the already-resolved (fully dereferenced) tree, the same as the rule
+// builder's field picker.
 export async function locateFieldOwner(
   family: string,
   source: ExtractionSource,
@@ -105,9 +106,10 @@ export async function locateFieldOwner(
   return { owner, raw, localPath: [...localPath, lastSegment] };
 }
 
-// Immutable replace at localPath within raw.properties (nested via
-// properties.<seg>.properties.<seg>...), leaving every other key (including
-// sibling properties, required[], x-example-source, x-rules) untouched.
+// Replaces the value at localPath within raw.properties, without mutating
+// the original object. The path nests through
+// properties.<seg>.properties.<seg>... Every other key stays untouched,
+// including sibling properties, required[], x-example-source, and x-rules.
 function replaceAtPath(raw: Record<string, unknown>, localPath: string[], replacement: unknown): Record<string, unknown> {
   const clone = JSON.parse(JSON.stringify(raw)) as Record<string, unknown>;
   let cursor = clone;
@@ -132,7 +134,8 @@ export async function extractComponent(
     throw new RegistryError(`A component named "${componentName}" already exists.`, 409);
   } catch (err) {
     if (err instanceof RegistryError && err.statusCode === 409) throw err;
-    // 404 ("not found") is the expected/desired outcome — no collision, fall through.
+    // A 404 ("not found") is expected here: no name collision, so fall
+    // through.
   }
 
   const { owner, raw: ownerRaw, localPath } = await locateFieldOwner(family, source, path);
@@ -149,7 +152,7 @@ export async function extractComponent(
     throw new RegistryError(`Field "${path.join(".")}" not found.`, 404);
   }
   if (typeof fieldNode.$ref === "string") {
-    throw new RegistryError(`"${path.join(".")}" is already a component reference; nothing to extract.`, 400);
+    throw new RegistryError(`"${path.join(".")}" is already linked to a component; nothing to extract.`, 400);
   }
   if (fieldNode.type !== "object") {
     throw new RegistryError(
@@ -158,9 +161,9 @@ export async function extractComponent(
     );
   }
 
-  // Build the new component, matching the shape of hand-authored components
-  // (registry/<family>/components/*.schema.json): $schema/title wrapping
-  // around the extracted node's own properties/required/description.
+  // Build the new component. Match the shape of a hand-authored component
+  // (registry/<family>/components/*.schema.json): $schema and title wrap
+  // around the extracted node's own properties, required, and description.
   const componentContent: Record<string, unknown> = {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     title: `${family}.${componentName}`,
@@ -175,8 +178,8 @@ export async function extractComponent(
   await writeComponent(family, componentName, componentContent);
 
   // Patch the owner: swap the field's inline schema for a $ref. required[]
-  // (wherever it lives) still lists the same key name, so required-ness is
-  // preserved automatically — nothing to do there.
+  // still lists the same key name, wherever it lives. Required-ness is
+  // preserved automatically. Nothing more to do there.
   const patchedOwnerRaw = replaceAtPath(ownerRaw, localPath, {
     $ref: `components/${componentName}.schema.json`,
   });

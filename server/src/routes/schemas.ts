@@ -37,28 +37,29 @@ export async function schemaRoutes(app: FastifyInstance): Promise<void> {
 
       const body = content as Record<string, unknown>;
 
-      // Transient signal from the Component-links picker's "Unlink" action:
-      // field names (top-level only — nested fields never hit the
-      // preservation check below) that should NOT have their existing $ref
-      // preserved on this Apply, even though the comment directive that
-      // would normally justify preserving it is gone. Never persisted.
+      // A transient signal from the Component links picker's "Unlink"
+      // action. Lists top-level field names only. A nested field never
+      // hits the preservation check below, so it needs no signal. For each
+      // listed field, do NOT preserve its existing $ref on this Apply, even
+      // though the comment directive that would normally justify
+      // preserving it is gone. This signal is never persisted.
       const unlinkComponents = Array.isArray(body["x-unlink-components"])
         ? (body["x-unlink-components"] as unknown[]).filter((f): f is string => typeof f === "string")
         : [];
       delete body["x-unlink-components"];
 
-      // If an annotated example was submitted, derive properties/required
-      // from it — this is the primary authoring path for the left-hand
-      // Input tab. Existing on-disk properties are consulted so a top-level
-      // $ref (component wiring) is preserved rather than overwritten with
-      // an inferred inline shape.
+      // If an annotated example was submitted, derive properties and
+      // required from it. This is the primary authoring path for the
+      // left-hand Input tab. Existing on-disk properties are consulted, so
+      // a top-level $ref (a component link) is preserved instead of being
+      // overwritten with an inferred inline shape.
       if (typeof body["x-example-source"] === "string") {
         let existingProperties: Record<string, unknown> = {};
         try {
           const onDisk = (await readSchema(family, schema)) as Record<string, unknown>;
           existingProperties = (onDisk.properties as Record<string, unknown>) ?? {};
         } catch {
-          // New schema with no file yet — nothing to preserve.
+          // A new schema with no file yet. Nothing to preserve.
         }
         for (const field of unlinkComponents) {
           delete existingProperties[field];
@@ -76,7 +77,7 @@ export async function schemaRoutes(app: FastifyInstance): Promise<void> {
         } catch (err) {
           if (err instanceof MissingBaseFieldsError) {
             throw new RegistryError(
-              `${err.message}. The base schema's fields are the minimum every example must include — add them and try again.`,
+              `${err.message}. The base schema's fields are the minimum every example must include. Add them and try again.`,
               400,
             );
           }
@@ -101,8 +102,9 @@ export async function schemaRoutes(app: FastifyInstance): Promise<void> {
         body.required = derived.required;
       }
 
-      // Validate it resolves cleanly (refs exist, no base-field collisions,
-      // rules reference real fields) before persisting.
+      // Validate that it resolves cleanly before persisting: refs must
+      // exist, there must be no base-field collisions, and rules must
+      // reference real fields.
       await resolveSchema(family, schema, body);
       await writeSchema(family, schema, body);
 

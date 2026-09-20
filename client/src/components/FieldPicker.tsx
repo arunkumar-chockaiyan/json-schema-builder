@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { JsonTree, type TreeNode } from "./JsonTree";
 
-// Single-select field picker: a button showing the current selection, which
-// toggles an inline JsonTree popover — click a node to select it and close.
-// `isSelectable` decides which nodes can be picked (e.g. rule fields are
-// restricted to top-level; component extraction allows any object node at
-// any depth) — the full nested/component-derived structure is always
-// visible for browsing regardless.
+// A single-select field picker: a button that shows the current selection.
+// The button toggles an inline JsonTree popover. Click a node to select it
+// and close the popover. `isSelectable` decides which nodes can be picked.
+// For example, a rule field is restricted to the top level, while component
+// extraction allows any object node at any depth. The full nested,
+// component-derived structure is always visible for browsing, regardless of
+// what can be picked.
 export function FieldPicker({
   treeNodes,
   value,

@@ -17,9 +17,10 @@ export async function familyRoutes(app: FastifyInstance): Promise<void> {
     return detail;
   });
 
-  // Base has no parent to merge into (it IS the thing schemas merge with),
-  // so "resolved" here just means any $refs to components dereferenced —
-  // reusing the same dereference resolveComponent already does.
+  // Base has no parent to merge into. Base IS the thing schemas merge
+  // with. So "resolved" here just means: any $refs to components are
+  // dereferenced. This reuses the same dereference logic resolveComponent
+  // already does.
   app.get<{ Params: { family: string } }>("/api/families/:family/base", async (req) => {
     const { family } = req.params;
     const raw = await readBase(family);
@@ -27,9 +28,9 @@ export async function familyRoutes(app: FastifyInstance): Promise<void> {
     return { raw, resolved };
   });
 
-  // Single synthesized example for base — same generator used for a
-  // schema's "Full (generated)" example, computed on demand rather than
-  // persisted (base has no example-authoring concept of its own).
+  // A single synthesized example for base. Uses the same generator as a
+  // schema's "Full (generated)" example, computed on demand, not persisted.
+  // Base has no example-authoring concept of its own.
   app.get<{ Params: { family: string } }>("/api/families/:family/base/example", async (req) => {
     const { family } = req.params;
     const raw = await readBase(family);
@@ -45,10 +46,11 @@ export async function familyRoutes(app: FastifyInstance): Promise<void> {
       throw new RegistryError("Request body must be a JSON object (a JSON Schema document).", 400);
     }
 
-    // Validate it resolves cleanly (refs exist, no cycles) before persisting.
-    // Changing base affects every schema in the family at once — there's no
-    // guard here against name collisions with existing schemas' own fields;
-    // those surface the next time an affected schema is resolved.
+    // Validate that it resolves cleanly before persisting: refs must
+    // exist, and there must be no cycles. Changing base affects every
+    // schema in the family at once. There is no guard here against a name
+    // collision with an existing schema's own field. That surfaces the
+    // next time the affected schema is resolved.
     await resolveComponent(family, content);
     await writeBase(family, content);
 

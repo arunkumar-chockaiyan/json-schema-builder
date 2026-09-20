@@ -1,7 +1,7 @@
-// Synthesizes a "full" example instance from a *resolved* schema — every
-// property populated (required or not), used as the default entry in the
-// Examples tab so there's always something to look at even before any
-// fixture has been hand-authored.
+// Synthesizes a "full" example instance from a *resolved* schema. Every
+// property is populated, required or not. This is the default entry in the
+// Examples tab, so there is always something to look at, even before
+// anyone hand-authors a fixture.
 
 export function generateFullExample(resolvedSchema: unknown): unknown {
   const schema = resolvedSchema as Record<string, unknown> | undefined;

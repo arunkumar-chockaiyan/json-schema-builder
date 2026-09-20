@@ -110,9 +110,8 @@ export function ExtractComponentForm({ family, onExtracted, onCancel }: Props) {
         </label>
 
         <p className="muted split-hint">
-          Pick an object field to pull out into its own reusable component. Nested fields (including ones
-          already inside another component) are supported — the correct file to patch is figured out
-          automatically.
+          Pick an object field to pull out into its own reusable component. A nested field is supported, even
+          one already inside another component. The tool finds the correct file to patch automatically.
         </p>
 
         {error && <div className="panel error">{error}</div>}

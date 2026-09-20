@@ -1,15 +1,15 @@
-// Fixtures (registry/<family>/tests/<schema>/*.json) are static, hand-
-// authored instance files — nothing re-derives or updates them when the
-// schema they belong to changes (directly, or transitively via a component
-// or base edit). This module answers "is this fixture still valid against
-// the schema's *current* resolved output," so staleness is surfaced instead
-// of silently ignored.
+// A fixture (registry/<family>/tests/<schema>/*.json) is a static,
+// hand-authored instance file. Nothing re-derives or updates a fixture when
+// its schema changes, directly or transitively through a component or
+// base edit. This module answers one question: "is this fixture still
+// valid against the schema's *current* resolved output?" This surfaces
+// staleness instead of silently ignoring it.
 
-// ajv's CJS type declarations don't interop cleanly with NodeNext ESM here
-// (TypeScript sees the namespace object, not the default export, even
-// though the runtime value is correct) — same packages, same import shape
-// already proven to work at runtime in this codebase's own verification
-// scripts; the `as unknown as` casts just satisfy the type checker.
+// ajv's CJS type declarations do not interop cleanly with NodeNext ESM
+// here. TypeScript sees the namespace object, not the default export, even
+// though the runtime value is correct. This codebase's own verification
+// scripts already proved this same import shape works at runtime. The
+// `as unknown as` casts below just satisfy the type checker.
 import Ajv2020Module from "ajv/dist/2020.js";
 import addFormatsModule from "ajv-formats";
 import { generateValue } from "./exampleGenerator.js";
@@ -19,8 +19,9 @@ const addFormats = addFormatsModule as unknown as (ajv: import("ajv").default) =
 
 export interface FixtureValidationResult {
   valid: boolean;
-  // A short, human-readable summary of the first failure — full ajv error
-  // detail isn't useful in a list view, just enough to know what's wrong.
+  // A short, human-readable summary of the first failure. The full ajv
+  // error detail is not useful in a list view. This is just enough to
+  // know what is wrong.
   errorSummary?: string;
 }
 
@@ -32,8 +33,9 @@ export function validateFixture(resolvedSchema: unknown, instance: unknown): Fix
   try {
     validate = ajv.compile(resolvedSchema as Record<string, unknown>);
   } catch (err) {
-    // A schema that doesn't compile isn't the fixture's fault — surface it
-    // as a validation failure so it's visible rather than crashing the route.
+    // A schema that does not compile is not the fixture's fault. Surface it
+    // as a validation failure, so it is visible instead of crashing the
+    // route.
     return { valid: false, errorSummary: `Schema does not compile: ${err instanceof Error ? err.message : String(err)}` };
   }
 
@@ -50,34 +52,36 @@ export function validateFixture(resolvedSchema: unknown, instance: unknown): Fix
 export interface RepairResult {
   instance: unknown;
   valid: boolean;
-  // Fields that were added/filled in to fix a "missing required property"
-  // error — dot-paths, for a clear summary of what changed.
+  // Dot-paths of fields that were added or filled in to fix a "missing
+  // required property" error. Listed for a clear summary of what changed.
   repairedFields: string[];
-  // Fields that exist in the schema (at any depth, required or not) but
-  // were simply absent from the fixture — added for completeness, not
-  // because anything was invalid. This is how a newly-added *optional*
+  // Fields that exist in the schema, at any depth, required or not, but
+  // were simply absent from the fixture. These are added for completeness,
+  // not because anything was invalid. This is how a newly-added *optional*
   // field on a schema or component shows up in examples: adding a field
   // never produces a validation error, so the required-only repair pass
-  // above would never touch it otherwise.
+  // above would never touch it on its own.
   addedOptionalFields: string[];
-  // Set when the fixture is still invalid after repair — errors ajv reports
-  // that AREN'T "missing required property" (wrong type, enum, pattern,
-  // ...) aren't auto-fixed, since guessing a replacement risks destroying a
-  // meaningful hand-authored value. Those are left for a human to fix.
+  // Set when the fixture is still invalid after repair. An ajv error that
+  // is NOT "missing required property" (wrong type, enum, pattern, and so
+  // on) is not auto-fixed. Guessing a replacement risks destroying a
+  // meaningful hand-authored value. These errors are left for a person to
+  // fix.
   remainingErrors?: string[];
 }
 
 // Repairs a stale fixture in two passes:
-//  1. Fixes "missing required property" validation errors — existing
-//     values are never touched, only genuinely missing ones are added.
-//     Iterates (bounded) since adding one missing object can itself need
-//     its own required sub-fields filled in.
+//  1. Fixes "missing required property" validation errors. Existing values
+//     are never touched. Only genuinely missing ones are added. This pass
+//     iterates, with a bound, because adding one missing object can itself
+//     need its own required sub-fields filled in.
 //  2. Fills in any other schema-declared field (optional, at any depth)
-//     that's simply absent from the fixture — keeps the example
-//     comprehensive, not just valid. Also never touches an existing value;
-//     only adds what's missing, and only descends into nested objects that
-//     already exist in the fixture (it won't invent a whole optional
-//     sub-object the fixture never had, just fill gaps within ones it does).
+//     that is simply absent from the fixture. This keeps the example
+//     comprehensive, not just valid. This pass also never touches an
+//     existing value. It only adds what is missing, and only descends into
+//     nested objects that already exist in the fixture. It will not invent
+//     a whole optional sub-object the fixture never had. It only fills
+//     gaps within ones it does have.
 export function repairFixture(resolvedSchema: unknown, instance: unknown): RepairResult {
   const ajv = new Ajv2020({ allErrors: true, strict: false });
   addFormats(ajv);
@@ -98,8 +102,9 @@ export function repairFixture(resolvedSchema: unknown, instance: unknown): Repai
     const isLastPass = pass === MAX_PASSES - 1;
 
     if (requiredErrors.length === 0 || isLastPass) {
-      // Either nothing left that auto-repair can fix, or a pathological/
-      // cyclic schema exhausted the pass budget — report whatever's left.
+      // Either there is nothing left that auto-repair can fix, or a
+      // pathological or cyclic schema used up the pass budget. Report
+      // whatever is left.
       stillInvalid = true;
       remainingErrors = errors.map((e) => `${e.instancePath || "(root)"} ${e.message ?? "is invalid"}`);
       break;
@@ -112,7 +117,7 @@ export function repairFixture(resolvedSchema: unknown, instance: unknown): Repai
       const fullSegments = [...parentSegments, missingProperty];
 
       const fieldSchema = resolveSchemaAtPath(resolvedSchema, fullSegments);
-      if (!fieldSchema) continue; // shouldn't happen — schema said it's required, so it must be declared
+      if (!fieldSchema) continue; // Should not happen: the schema marked this required, so it must be declared.
 
       setAtPath(current, fullSegments, generateValue(fieldSchema));
       repairedFields.push(fullSegments.join("."));
@@ -136,11 +141,11 @@ export function repairFixture(resolvedSchema: unknown, instance: unknown): Repai
   };
 }
 
-// Walks `properties` alongside `instance`, adding any declared field that's
-// simply missing (regardless of required-ness) with a generated value.
-// Recurses into nested objects only when the fixture already has a value
-// there to fill gaps within — it doesn't fabricate an entirely-missing
-// optional sub-object's contents beyond the object itself.
+// Walks `properties` alongside `instance`. Adds a generated value for any
+// declared field that is simply missing, required or not. Recurses into a
+// nested object only when the fixture already has a value there, to fill
+// gaps within it. It does not invent the contents of an entirely missing
+// optional sub-object beyond the object itself.
 function fillMissingFields(properties: Record<string, unknown>, instance: Record<string, unknown>, pathPrefix = ""): string[] {
   const added: string[] = [];
   for (const [key, rawSchema] of Object.entries(properties)) {
@@ -170,8 +175,9 @@ function pointerToSegments(pointer: string): string[] {
     .map((s) => s.replace(/~1/g, "/").replace(/~0/g, "~"));
 }
 
-// Walks a resolved schema's `properties` tree following `segments`, e.g.
-// ["contact", "address", "country"] -> the schema node for that leaf.
+// Walks a resolved schema's `properties` tree, following `segments`. For
+// example, ["contact", "address", "country"] resolves to the schema node
+// for that leaf field.
 function resolveSchemaAtPath(resolvedSchema: unknown, segments: string[]): Record<string, unknown> | undefined {
   let cursor = resolvedSchema as Record<string, unknown> | undefined;
   for (const segment of segments) {
@@ -183,8 +189,9 @@ function resolveSchemaAtPath(resolvedSchema: unknown, segments: string[]): Recor
 }
 
 // Sets `value` at `segments` within `obj`, creating intermediate objects as
-// needed (shouldn't normally be necessary — a "required" error implies the
-// parent already exists — but defensive in case of deeper staleness).
+// needed. This should not normally be necessary, since a "required" error
+// implies the parent already exists. It is defensive, in case of deeper
+// staleness.
 function setAtPath(obj: Record<string, unknown>, segments: string[], value: unknown): void {
   let cursor = obj;
   for (let i = 0; i < segments.length - 1; i++) {

@@ -19,9 +19,9 @@ export function NewSchemaForm({ family, onCreated, onCancel }: Props) {
   const [creating, setCreating] = useState(false);
   const [baseRequiredFields, setBaseRequiredFields] = useState<string[]>([]);
 
-  // Seed the editor with a skeleton containing the base's required fields,
-  // so it's obvious from the start what the "minimum" is — only if the user
-  // hasn't started typing yet.
+  // Seeds the editor with a skeleton that contains base's required fields.
+  // This makes the "minimum" obvious from the start. Only applies if the
+  // user has not started typing yet.
   useEffect(() => {
     api
       .getBase(family.name)
@@ -111,7 +111,12 @@ export function NewSchemaForm({ family, onCreated, onCancel }: Props) {
               To create an enum, type values separated by commas, for example <code>"card,check"</code>. The first
               value becomes the example value.
             </li>
-            <li>You can add rules and component links after you create the schema.</li>
+            <li>
+              To link a field to an existing component instead of inferring its shape, type{" "}
+              <code>-- component: &lt;name&gt;</code> (combine with required: <code>-- component: address; required</code>
+              ).
+            </li>
+            <li>You can add rules, and use the guided component-link picker, after you create the schema.</li>
             {baseRequiredFields.length > 0 && (
               <li>
                 This schema must include these base fields: <code>{baseRequiredFields.join(", ")}</code>.

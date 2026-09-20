@@ -35,8 +35,9 @@ export default function App() {
       .catch((err) => setError(err.message));
   }, [familyName]);
 
-  // Re-fetches the family's schema/component lists without touching
-  // selection — used after creating a new schema so the sidebar picks it up.
+  // Re-fetches the family's schema and component lists, without touching
+  // selection. Used after creating a new schema, so the sidebar picks it
+  // up.
   const refreshFamily = async () => {
     if (!familyName) return;
     const detail = await api.getFamily(familyName);

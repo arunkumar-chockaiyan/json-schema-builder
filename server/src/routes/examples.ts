@@ -7,10 +7,10 @@ import { repairFixture, validateFixture } from "../lib/fixtureValidation.js";
 import { RegistryError } from "../types.js";
 
 export async function exampleRoutes(app: FastifyInstance): Promise<void> {
-  // Lists fixtures AND, for each, whether it's still valid against the
-  // schema's *current* resolved output — fixtures are static files, nothing
-  // updates them automatically when the schema (or a component/base it
-  // depends on) changes, so this is the only way staleness would surface.
+  // Lists fixtures, and for each one, whether it is still valid against the
+  // schema's *current* resolved output. Fixtures are static files. Nothing
+  // updates them automatically when the schema, or a component or base it
+  // depends on, changes. This check is the only way staleness surfaces.
   app.get<{ Params: { family: string; schema: string } }>(
     "/api/families/:family/schemas/:schema/examples",
     async (req) => {
@@ -32,13 +32,15 @@ export async function exampleRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  // A synthesized "full" instance (every property populated, required or
-  // not) from the resolved schema — always available, even for a schema
-  // with no hand-authored fixture yet. Registered as a static route before
-  // the ":name" param route below; Fastify's router prioritizes static
-  // segments over parametric ones regardless of registration order, but
-  // "_generated" can't collide with a real fixture name anyway (fixture
-  // names come from listTestCases, which only lists real files).
+  // A synthesized "full" instance from the resolved schema, with every
+  // property populated, required or not. Always available, even for a
+  // schema with no hand-authored fixture yet.
+  //
+  // This route is registered as a static route, before the ":name" param
+  // route below. Fastify's router prioritizes static segments over
+  // parametric ones regardless of registration order, but "_generated"
+  // cannot collide with a real fixture name anyway. Fixture names come
+  // from listTestCases, which only lists real files.
   app.get<{ Params: { family: string; schema: string } }>(
     "/api/families/:family/schemas/:schema/examples/_generated",
     async (req) => {
@@ -49,12 +51,12 @@ export async function exampleRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  // The "Primary" example — the comment-stripped parse of the schema's own
-  // x-example-source, i.e. whatever's currently on the left-hand Input tab.
-  // No separate fixture file (that's a future "folder per schema"
-  // iteration) — this just re-derives the plain JSON view of it on demand.
-  // 404s if the schema has no x-example-source yet, so the frontend knows to
-  // omit "Primary" from the dropdown.
+  // The "Primary" example: the comment-stripped parse of the schema's own
+  // x-example-source, the same text currently on the left-hand Input tab.
+  // There is no separate fixture file for this. That is a future "folder
+  // per schema" iteration. This route just re-derives the plain JSON view
+  // of it on demand. It returns 404 when the schema has no x-example-source
+  // yet, so the frontend knows to omit "Primary" from the dropdown.
   app.get<{ Params: { family: string; schema: string } }>(
     "/api/families/:family/schemas/:schema/examples/_primary",
     async (req) => {
@@ -65,24 +67,29 @@ export async function exampleRoutes(app: FastifyInstance): Promise<void> {
         throw new RegistryError(`Schema "${schema}" has no primary example yet.`, 404);
       }
       const { json } = stripComments(source);
-      // Same comma -> enum convention as derivation: show the representative
-      // (first) value for any comma-list field, so this stays a genuinely
-      // valid instance against the derived schema rather than showing the
-      // raw "card,check" as if it were one literal value.
+      // Uses the same comma-to-enum convention as derivation: show the
+      // representative (first) value for any comma-list field. This keeps
+      // the result a genuinely valid instance against the derived schema,
+      // instead of showing the raw "card,check" as one literal value.
       return applyExampleConventions(JSON.parse(json));
     },
   );
 
-  // Repairs every stale fixture for this schema in one go — the "after all
-  // the changes are done" button. Two kinds of drift are fixed automatically:
-  // missing-required-property validation errors, and any other
-  // schema-declared field (optional, at any depth) that's simply absent
-  // from the fixture — so a newly-added optional field shows up in examples
-  // too, not just ones that broke validity. Anything ajv flags that ISN'T a
-  // missing property (wrong type, enum, pattern...) is left for a human,
-  // since guessing a replacement could destroy a meaningful hand-authored
-  // value. Registered before the ":name" route below for the same
-  // static-vs-parametric reason as "_generated"/"_primary".
+  // Repairs every stale fixture for this schema in one go. This is the
+  // "after all the changes are done" button.
+  //
+  // Two kinds of drift are fixed automatically: missing-required-property
+  // validation errors, and any other schema-declared field (optional, at
+  // any depth) that is simply absent from the fixture. This way, a
+  // newly-added optional field shows up in examples too, not only fields
+  // that broke validity.
+  //
+  // Anything ajv flags that is NOT a missing property (wrong type, enum,
+  // pattern, and so on) is left for a person to fix. Guessing a
+  // replacement could destroy a meaningful hand-authored value.
+  //
+  // Registered before the ":name" route below, for the same
+  // static-vs-parametric reason as "_generated" and "_primary".
   app.post<{ Params: { family: string; schema: string } }>(
     "/api/families/:family/schemas/:schema/examples/repair",
     async (req) => {

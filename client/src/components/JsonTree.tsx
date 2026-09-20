@@ -14,14 +14,17 @@ export interface TreeNode {
 
 const COMPONENT_REF_PATTERN = /^components\/(.+)\.schema\.json$/;
 
-// Walks a *resolved* schema's `properties` (base merged in, $refs already
-// dereferenced) into a tree for browsing/picking. Arrays render a single
-// summarizing "items" child rather than per-index, matching how the schema
-// itself describes them. Also usable on a schema's own *raw* (un-dereferenced)
-// properties (e.g. for the component-link picker) — a bare `$ref` node, which
-// never appears in a resolved tree but can in a raw one, renders as a leaf
-// annotated with the component it points to rather than falling through
-// blank.
+// Walks a *resolved* schema's `properties` into a tree for browsing and
+// picking. Base fields are already merged in, and $refs are already
+// dereferenced. An array renders a single summarizing "items" child,
+// instead of one child per index, matching how the schema itself describes
+// arrays.
+//
+// This function also works on a schema's own *raw* (un-dereferenced)
+// properties, for example for the component link picker. A raw tree can
+// contain a bare `$ref` node, which never appears in a resolved tree. A
+// bare `$ref` node renders as a leaf, annotated with the component it
+// points to, instead of falling through blank.
 export function buildSchemaTree(properties: Record<string, unknown> | undefined, depth = 0, pathPrefix = ""): TreeNode[] {
   if (!properties) return [];
   return Object.entries(properties).map(([key, raw]) => {
@@ -78,8 +81,8 @@ export function buildSchemaTree(properties: Record<string, unknown> | undefined,
   });
 }
 
-// Walks a plain JS value (a parsed example/test-case JSON document) into the
-// same tree shape, for the read-only Example view.
+// Walks a plain JS value (a parsed example or fixture JSON document) into
+// the same tree shape, for the read-only Example view.
 export function buildExampleTree(value: unknown, depth = 0, pathPrefix = "", key = ""): TreeNode[] {
   if (value === null || typeof value !== "object") {
     return [];
@@ -150,10 +153,11 @@ export function JsonTree({
 
   const renderNode = (node: TreeNode): ReactNode => {
     const isContainer = node.kind === "object" || node.kind === "array";
-    // Nodes shallower than defaultExpandedDepth start open; toggling a node
-    // flips it away from that default, tracked by presence in `collapsed`
-    // (the set name reflects the toggled-away-from-default state, not
-    // literally "is collapsed", for nodes that default open).
+    // A node shallower than defaultExpandedDepth starts open. Toggling a
+    // node flips it away from that default. This is tracked by presence in
+    // `collapsed`. The set's name reflects the "toggled away from default"
+    // state, not literally "is collapsed," for a node that defaults to
+    // open.
     const defaultOpen = node.depth < defaultExpandedDepth;
     const open = collapsed.has(node.path) ? !defaultOpen : defaultOpen;
 

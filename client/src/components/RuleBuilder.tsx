@@ -17,16 +17,17 @@ interface Props {
   onChange: (rules: Rule[]) => void;
 }
 
-// Any field at any depth can be a rule target (the compiler supports nested
-// dot-paths, wrapping properties/required through each ancestor) — just not
-// the field the rule's own WHEN condition is already keyed on.
+// A rule target can be any field at any depth. The compiler supports
+// nested dot-paths, wrapping properties and required through each
+// ancestor. The only restriction: a target cannot be the same field the
+// rule's own WHEN condition already uses.
 function fieldSelectable(excludeField?: string) {
   return (n: TreeNode) => n.path !== excludeField;
 }
 
-// Multi-select field picker: chips for each selected path + an "add field"
-// trigger that opens the same inline tree; clicking a selected node again
-// removes it.
+// A multi-select field picker. Shows a chip for each selected path, plus an
+// "add field" trigger that opens the same inline tree. Clicking an
+// already-selected node again removes it.
 export function FieldMultiPicker({
   treeNodes,
   values,
@@ -88,7 +89,7 @@ function isListOperator(operator: RuleOperator): boolean {
   return operator === "oneOf" || operator === "noneOf";
 }
 
-// Renders the WHEN value input, adapting to the target field's declared type.
+// Renders the WHEN value input. Adapts to the target field's declared type.
 function ValueInput({
   field,
   operator,
@@ -170,8 +171,9 @@ function ValueInput({
   );
 }
 
-// The full WHEN/THEN editor for a single rule — only ever rendered for the
-// one rule currently being added or edited, not for the whole list at once.
+// The full WHEN/THEN editor for a single rule. Only ever rendered for the
+// one rule currently being added or edited, not for the whole list at
+// once.
 function RuleEditorCard({
   rule,
   fields,
@@ -188,18 +190,20 @@ function RuleEditorCard({
   onCancel: () => void;
 }) {
   const whenField = fieldInfo(fields, rule.when.field);
-  // Decoupled from rule.then.constrain.enum on purpose: that array is
-  // trimmed/filtered on every change (dropping empty trailing entries), so
-  // binding the input's value straight to enum.join(", ") snaps back and
-  // erases whatever's being typed the moment you type a trailing comma —
-  // you'd never be able to start a second value. Local text state tracks
-  // exactly what's typed; the derived enum array still updates live.
+  // Deliberately decoupled from rule.then.constrain.enum. That array is
+  // trimmed and filtered on every change, dropping empty trailing entries.
+  // Binding the input's value straight to enum.join(", ") would snap back
+  // and erase whatever is being typed the moment you type a trailing
+  // comma. You would never be able to start a second value. This local
+  // text state tracks exactly what is typed. The derived enum array still
+  // updates live.
   const [constrainText, setConstrainText] = useState(() => rule.then.constrain?.enum.join(", ") ?? "");
 
   useEffect(() => {
     setConstrainText(rule.then.constrain?.enum.join(", ") ?? "");
-    // Only re-sync when switching to a different rule — not on every
-    // keystroke's derived-array update, which would fight the local state.
+    // Only re-sync when switching to a different rule. Do not re-sync on
+    // every keystroke's derived-array update. That would fight the local
+    // state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rule.id]);
 
@@ -332,10 +336,11 @@ function RuleEditorCard({
 
 export function RuleBuilder({ rules, fields, treeNodes, onChange }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
-  // Snapshot of the rule as it was when editing began — null means "this is
-  // a brand-new rule with no prior state," so Cancel deletes it instead of
-  // trying to restore something that never existed. Otherwise Cancel
-  // restores the rule to this snapshot, discarding whatever was typed.
+  // A snapshot of the rule as it was when editing began. Null means "this
+  // is a brand-new rule with no prior state." In that case, Cancel deletes
+  // the rule instead of trying to restore something that never existed.
+  // Otherwise, Cancel restores the rule to this snapshot, discarding
+  // whatever was typed.
   const [editingSnapshot, setEditingSnapshot] = useState<Rule | null>(null);
   const [editingIsNew, setEditingIsNew] = useState(false);
 

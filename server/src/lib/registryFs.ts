@@ -1,6 +1,6 @@
-// File-system helpers scoped to the /registry directory.
-// All reads/writes to registry data go through this module so path handling
-// (and eventually locking/atomic writes) stays in one place.
+// File-system helpers scoped to the /registry directory. Every read and
+// write of registry data goes through this module. This keeps path
+// handling, and eventually locking and atomic writes, in one place.
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -9,7 +9,7 @@ import { RegistryError } from "../types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// server/src/lib -> repo root is three levels up (lib -> src -> server -> root)
+// server/src/lib to the repo root is three levels up: lib -> src -> server -> root.
 export const REGISTRY_ROOT = path.resolve(__dirname, "../../../registry");
 
 function familyDir(family: string): string {
@@ -41,9 +41,10 @@ function testCasePath(family: string, schema: string, name: string): string {
   return path.join(testCasesDir(family, schema), `${name}.json`);
 }
 
-// Guard against path traversal via family/schema/component names coming from
-// route params. Exported so callers constructing a *new* name (e.g. schema
-// creation, component extraction) can validate before ever touching the fs.
+// Guards against path traversal through a family, schema, or component name
+// that came from a route param. Exported so a caller building a *new* name
+// (for example, schema creation or component extraction) can validate it
+// before touching the file system.
 export function assertSafeSegment(segment: string): void {
   if (!segment || segment.includes("/") || segment.includes("\\") || segment.includes("..")) {
     throw new RegistryError(`Invalid path segment: "${segment}"`, 400);
@@ -126,8 +127,8 @@ export async function writeComponent(family: string, component: string, content:
   await writeJson(componentPath(family, component), content);
 }
 
-// Absolute path helpers, used by the resolver ($ref resolution) and the git
-// log/diff wrapper (which needs a path relative to the repo root).
+// Absolute path helpers. Used by the resolver for $ref resolution, and by
+// the git log/diff wrapper, which needs a path relative to the repo root.
 export function absoluteSchemaPath(family: string, schema: string): string {
   return schemaPath(family, schema);
 }
@@ -140,6 +141,10 @@ export function familyComponentsDir(family: string): string {
   return path.join(familyDir(family), "components");
 }
 
+// Everywhere else in this codebase (comments, UI text, error messages) this
+// concept is called a "fixture." The functions below keep the older
+// "test case" name, matching the /tests/ folder name on disk. Both names
+// mean the same thing: a hand-authored instance file for a schema.
 export async function listTestCases(family: string, schema: string): Promise<string[]> {
   try {
     const entries = await fs.readdir(testCasesDir(family, schema));

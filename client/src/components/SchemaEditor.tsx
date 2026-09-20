@@ -9,20 +9,25 @@ import type { Rule } from "../rules";
 
 interface Props {
   family: string;
-  // SchemaEditor never receives "newSchema" or "extractComponent" — App.tsx
-  // routes those selections to NewSchemaForm / ExtractComponentForm instead.
+  // SchemaEditor never receives a "newSchema" or "extractComponent"
+  // selection. App.tsx routes those to NewSchemaForm and
+  // ExtractComponentForm instead.
   selection: Exclude<Selection, { kind: "newSchema" } | { kind: "extractComponent" }>;
 }
 
-// Schemas get the two-pane layout: left = editable (annotated example Input
-// + Rules), right = read-only verification (generated Schema + Examples
-// gallery). Base/Component get a simpler two-pane variant: left = editable
-// raw JSON (no Input/Rules distinction — they're hand-edited, not
-// example-derived), right = just a single generated Example (no dropdown,
-// not persisted — see server/src/lib/exampleGenerator.ts). Base's left
-// editor is locked by default (editing it affects every schema in the
-// family at once) — an explicit "Enable editing" action in the warning
-// banner unlocks it.
+// A schema gets the two-pane layout. The left pane is editable: the
+// annotated example Input tab, plus the Constraints tab. The right pane is
+// read-only: the generated Schema, plus the Examples gallery.
+//
+// Base and a component get a simpler two-pane variant. The left pane is
+// editable raw JSON. There is no Input/Constraints split, since base and
+// components are hand-edited, not derived from an example. The right pane
+// is just a single generated Example, with no dropdown, not persisted (see
+// server/src/lib/exampleGenerator.ts).
+//
+// Base's left editor is locked by default, since editing it affects every
+// schema in the family at once. An explicit "Enable editing" action in the
+// warning banner unlocks it.
 type LeftTab = "input" | "rules";
 type RightTab = "source" | "examples";
 
@@ -35,11 +40,11 @@ function safeParse(json: string): Record<string, unknown> | null {
   }
 }
 
-// Walks the schema's own raw properties/required tree (not resolved — a
-// $ref node has no properties/required of its own to recurse into, which
-// correctly excludes a component's own required fields; those are the
-// component's business, not this schema's `-- required` comments) and
-// collects every dot-path made required via the example's `-- required`
+// Walks the schema's own raw properties/required tree, not the resolved
+// tree. A $ref node has no properties or required of its own to recurse
+// into. This correctly excludes a component's own required fields. Those
+// are the component's business, not this schema's `-- required` comments.
+// Collects every dot-path made required by the example's `-- required`
 // comment directive, at any depth.
 function collectCommentRequiredPaths(node: Record<string, unknown> | null | undefined, prefix = ""): string[] {
   if (!node) return [];
@@ -53,10 +58,10 @@ function collectCommentRequiredPaths(node: Record<string, unknown> | null | unde
   return paths;
 }
 
-// Splits a line into JSON code + trailing "-- comment", mirroring the
-// server's parser (server/src/lib/example.ts's splitTrailingComment)
-// closely enough for editing — string-literal aware so a "--" inside a
-// value isn't mistaken for a comment start.
+// Splits a line into its JSON code and a trailing "-- comment". Mirrors
+// the server's parser (server/src/lib/example.ts's splitTrailingComment)
+// closely enough for editing. String-literal aware, so a "--" inside a
+// value is not read as a comment start.
 function splitTrailingComment(line: string): { code: string; comment: string | null } {
   let inString = false;
   for (let i = 0; i < line.length; i++) {
@@ -101,16 +106,17 @@ function mergeComponentDirective(commentText: string | undefined, componentName:
   return parts.join("; ");
 }
 
-// Locates the comment governing `targetPath` in the annotated example —
-// either a trailing comment on the field's own line, or a standalone
-// comment line immediately above it (the two forms
-// server/src/lib/example.ts's stripComments recognizes) — and rewrites it
-// via `transform`: given the comment's current text (undefined if there
-// isn't one), return the new text, or undefined to remove the comment
-// entirely. If there's no comment yet and `transform` returns text, it's
-// added as a fresh trailing comment on the key's own line (works even for a
-// multi-line object value — a trailing comment on the opening-brace line
-// doesn't affect nesting tracking below).
+// Locates the comment governing `targetPath` in the annotated example.
+// This is either a trailing comment on the field's own line, or a
+// standalone comment line immediately above it. These are the two forms
+// server/src/lib/example.ts's stripComments recognizes. Rewrites the
+// comment through `transform`: given the comment's current text (undefined
+// if there is not one), `transform` returns the new text, or undefined to
+// remove the comment entirely. If there is no comment yet and `transform`
+// returns text, that text is added as a fresh trailing comment on the
+// key's own line. This works even for a multi-line object value. A
+// trailing comment on the opening-brace line does not affect the nesting
+// tracking below.
 function editFieldComment(
   source: string,
   targetPath: string,
@@ -175,7 +181,7 @@ function editFieldComment(
 
 // Removes the `required` directive from whichever comment currently marks
 // `targetPath` as required. Keeps any description text the comment also
-// carried; leaves everything else untouched. Used so removing a field from
+// carried. Leaves everything else untouched. Used so removing a field from
 // the Required fields picker actually sticks, instead of the comment
 // silently re-adding it on the next Apply.
 function removeRequiredDirective(source: string, targetPath: string): string {
@@ -183,31 +189,34 @@ function removeRequiredDirective(source: string, targetPath: string): string {
 }
 
 // Adds or replaces the `component: <name>` directive on `targetPath`'s
-// comment — used to link (or reassign) a field to a component from the
-// Component links picker without hand-typing the directive.
+// comment. Used to link, or reassign, a field to a component from the
+// Component links picker, without hand-typing the directive.
 function setComponentDirective(source: string, targetPath: string, componentName: string): string {
   return editFieldComment(source, targetPath, (existing) => mergeComponentDirective(existing, componentName));
 }
 
 // Removes the `component: <name>` directive from `targetPath`'s comment.
-// For a TOP-LEVEL path this alone does not make the field's schema revert
-// to an inferred inline shape — deriveProperties (server/src/lib/example.ts)
-// preserves an existing on-disk $ref regardless of the comment, since that's
-// the only signal an Extract-Component-created ref has. The caller also
-// needs to fold the path into `x-unlink-components` for the next save (see
-// handleUnlinkComponent) so the server knows to stop preserving it. Nested
-// paths don't need that extra step — the preservation check is top-level
-// only.
+//
+// For a TOP-LEVEL path, this alone does not make the field's schema
+// revert to an inferred inline shape. deriveProperties
+// (server/src/lib/example.ts) preserves an existing on-disk $ref
+// regardless of the comment. That is the only signal an
+// Extract-Component-created ref has. The caller also needs to fold the
+// path into `x-unlink-components` for the next save (see
+// handleUnlinkComponent), so the server knows to stop preserving it.
+//
+// A nested path does not need that extra step. The preservation check is
+// top-level only.
 function removeComponentDirective(source: string, targetPath: string): string {
   return editFieldComment(source, targetPath, stripComponentDirective);
 }
 
 const COMPONENT_REF_PATTERN = /^components\/(.+)\.schema\.json$/;
 
-// Walks the schema's own raw properties tree (never resolved — mirrors
-// collectCommentRequiredPaths) and records every field whose schema is
-// currently a bare $ref, without recursing into it (its internals belong to
-// the linked component's own file, not this schema).
+// Walks the schema's own raw properties tree, never the resolved tree.
+// Mirrors collectCommentRequiredPaths. Records every field whose schema is
+// currently a bare $ref, without recursing into it. Its internals belong
+// to the linked component's own file, not this schema.
 function collectComponentLinks(node: Record<string, unknown> | null | undefined, prefix = ""): Map<string, string> {
   const links = new Map<string, string>();
   if (!node) return links;
@@ -263,9 +272,9 @@ export function SchemaEditor({ family, selection }: Props) {
   const [repairSummary, setRepairSummary] = useState<string | null>(null);
   const [baseRequiredFields, setBaseRequiredFields] = useState<string[]>([]);
   const [availableComponents, setAvailableComponents] = useState<string[]>([]);
-  // Comment-required fields whose "-- required" directive was just stripped
-  // client-side, hidden optimistically until Save/Apply persists it and a
-  // reload recomputes commentRequiredFields for real.
+  // Comment-required fields whose "-- required" directive was just
+  // stripped client-side. Hidden optimistically, until Save/Apply persists
+  // the change and a reload recomputes commentRequiredFields for real.
   const [pendingCommentRemovals, setPendingCommentRemovals] = useState<Set<string>>(new Set());
   const [exampleSelection, setExampleSelection] = useState<string>(GENERATED_EXAMPLE_KEY);
   const [exampleData, setExampleData] = useState<unknown>(undefined);
@@ -309,8 +318,9 @@ export function SchemaEditor({ family, selection }: Props) {
       .finally(() => setLoading(false));
   }, [family, selection]);
 
-  // Base/Component's single generated example — computed on demand, not
-  // persisted (no example-authoring concept for these, unlike schemas).
+  // Base's and a component's single generated example. Computed on
+  // demand, not persisted. Unlike a schema, base and a component have no
+  // example-authoring concept of their own.
   useEffect(() => {
     if (selection.kind !== "base" && selection.kind !== "component") {
       setBcExampleData(undefined);
@@ -326,8 +336,8 @@ export function SchemaEditor({ family, selection }: Props) {
       .finally(() => setBcExampleLoading(false));
   }, [family, selection]);
 
-  // Base's required fields — shown as a hint on the Input tab, since the
-  // annotated example must include all of them (base is the minimum).
+  // Base's required fields. Shown as a hint on the Input tab, since the
+  // annotated example must include all of them. Base is the minimum.
   useEffect(() => {
     if (selection.kind !== "schema") {
       setBaseRequiredFields([]);
@@ -342,8 +352,8 @@ export function SchemaEditor({ family, selection }: Props) {
       .catch(() => setBaseRequiredFields([]));
   }, [family, selection]);
 
-  // Family's existing components — shown as a hint on the Input tab so it's
-  // clear what names `-- component: <name>` can point at.
+  // The family's existing components. Shown as a hint on the Input tab, so
+  // it is clear what names `-- component: <name>` can point at.
   useEffect(() => {
     if (selection.kind !== "schema") {
       setAvailableComponents([]);
@@ -355,12 +365,12 @@ export function SchemaEditor({ family, selection }: Props) {
       .catch(() => setAvailableComponents([]));
   }, [family, selection]);
 
-  // Fixture (saved test case) list, with each one's validity against the
-  // schema's *current* resolved output — fixtures are static files, nothing
-  // updates them automatically when the schema (or a component/base it
-  // depends on) changes, so this is how staleness surfaces. Independent of
-  // the source/resolved/rules fetch above so a schema with no fixtures
-  // doesn't block those.
+  // The list of saved fixtures, with each one's validity against the
+  // schema's *current* resolved output. Fixtures are static files. Nothing
+  // updates them automatically when the schema, or a component or base it
+  // depends on, changes. This is how staleness surfaces. Independent of
+  // the source/resolved/rules fetch above, so a schema with no fixtures
+  // does not block those.
   const reloadFixtures = () => {
     if (selection.kind !== "schema") {
       setFixtures([]);
@@ -374,8 +384,8 @@ export function SchemaEditor({ family, selection }: Props) {
 
   useEffect(reloadFixtures, [family, selection]);
 
-  // Right-half Examples tab: reload whenever the dropdown selection (or the
-  // schema itself) changes.
+  // The right-half Examples tab. Reloads whenever the dropdown selection,
+  // or the schema itself, changes.
   const reloadExampleData = () => {
     if (selection.kind !== "schema") {
       setExampleData(undefined);
@@ -416,7 +426,7 @@ export function SchemaEditor({ family, selection }: Props) {
       }
       let summary = parts.length > 0 ? `Repaired: ${parts.join("; ")}.` : "Fixtures already match the current schema.";
       if (stillInvalid.length > 0) {
-        summary += ` ${stillInvalid.length} still invalid (needs a manual fix — see the fixture's error below).`;
+        summary += ` ${stillInvalid.length} still invalid. These need a manual fix. See the fixture's error below.`;
       }
       setRepairSummary(summary);
       reloadFixtures();
@@ -428,8 +438,9 @@ export function SchemaEditor({ family, selection }: Props) {
     }
   };
 
-  // Structured view over `raw` — parses on every raw change so Rules and the
-  // Input tab's seed text stay in sync with what's actually persisted.
+  // A structured view over `raw`. Parses on every raw change, so the
+  // Constraints tab and the Input tab's seed text stay in sync with what
+  // is actually persisted.
   const rawObj = useMemo(() => safeParse(raw), [raw]);
   const resolvedObj = useMemo(() => safeParse(resolved), [resolved]);
   const fields = useMemo(() => extractFields(resolvedObj), [resolvedObj]);
@@ -437,10 +448,10 @@ export function SchemaEditor({ family, selection }: Props) {
     () => buildSchemaTree(resolvedObj?.properties as Record<string, unknown> | undefined),
     [resolvedObj],
   );
-  // Own-fields tree for the Component links picker — built from this
-  // schema's raw (un-dereferenced) properties, not resolved, so a linked
-  // field's internals (which belong to the component's own file) aren't
-  // offered as re-linkable targets.
+  // The own-fields tree for the Component links picker. Built from this
+  // schema's raw (un-dereferenced) properties, not the resolved tree. A
+  // linked field's internals belong to the component's own file. This way
+  // they are not offered as re-linkable targets.
   const ownFieldTreeNodes = useMemo(
     () => buildSchemaTree(rawObj?.properties as Record<string, unknown> | undefined),
     [rawObj],
@@ -454,23 +465,23 @@ export function SchemaEditor({ family, selection }: Props) {
     () => (Array.isArray(rawObj?.["x-required-fields"]) ? (rawObj!["x-required-fields"] as string[]) : []),
     [rawObj],
   );
-  // Fields required via the example's `-- required` comment directive —
-  // filtered by pendingCommentRemovals so a just-edited field disappears
-  // immediately instead of waiting for a Save/reload round-trip.
+  // Fields required through the example's `-- required` comment directive.
+  // Filtered by pendingCommentRemovals, so a just-edited field disappears
+  // immediately, instead of waiting for a Save/reload round-trip.
   const commentRequiredFields = useMemo(
     () => collectCommentRequiredPaths(rawObj).filter((f) => !pendingCommentRemovals.has(f)),
     [rawObj, pendingCommentRemovals],
   );
-  // The Required fields picker shows one merged, fully-removable list —
-  // fields required via the explicit x-required-fields list, and fields
-  // required via the example's comment directive, treated the same way.
+  // The Required fields picker shows one merged, fully-removable list. It
+  // treats a field required through the explicit x-required-fields list
+  // the same as a field required through the example's comment directive.
   const allRequiredFields = useMemo(
     () => Array.from(new Set([...requiredFields, ...commentRequiredFields])),
     [requiredFields, commentRequiredFields],
   );
 
-  // Seed the Input tab's text whenever `raw` (re)loads — from the schema's
-  // own x-example-source if it has one, else an empty object to start from.
+  // Seeds the Input tab's text whenever `raw` (re)loads. Uses the schema's
+  // own x-example-source if it has one, or an empty object to start from.
   useEffect(() => {
     if (!rawObj) return;
     const existing = rawObj["x-example-source"];
@@ -483,12 +494,13 @@ export function SchemaEditor({ family, selection }: Props) {
     setRaw(JSON.stringify(nextRaw, null, 2));
   };
 
-  // The picker shows one merged list (explicit x-required-fields + comment-
-  // required), so a single toggle click can mean different things: adding a
-  // brand-new field always goes into x-required-fields; removing a field
-  // that came from the example's `-- required` comment edits that comment
-  // directly (via removeRequiredDirective) so the removal actually sticks,
-  // rather than silently reappearing on the next Apply.
+  // The picker shows one merged list: explicit x-required-fields, plus
+  // comment-required fields. So a single toggle click can mean different
+  // things. Adding a brand-new field always goes into x-required-fields.
+  // Removing a field that came from the example's `-- required` comment
+  // edits that comment directly, through removeRequiredDirective. This way
+  // the removal actually sticks, instead of silently reappearing on the
+  // next Apply.
   const handleRequiredFieldsChange = (nextRequired: string[]) => {
     if (!rawObj) return;
     const removed = allRequiredFields.filter((f) => !nextRequired.includes(f));
@@ -515,12 +527,12 @@ export function SchemaEditor({ family, selection }: Props) {
     setRaw(JSON.stringify(nextRaw, null, 2));
   };
 
-  // Links (or reassigns) `path` to `componentName` — writes/replaces the
-  // `component: <name>` directive on that field's comment. No unlink signal
-  // needed even when reassigning: a fresh directive always takes priority
-  // over whatever the on-disk $ref currently is (see server/src/lib/
-  // example.ts's deriveProperties — componentRefs is checked before the
-  // preserve-existing-$ref fallback).
+  // Links, or reassigns, `path` to `componentName`. Writes or replaces the
+  // `component: <name>` directive on that field's comment. No unlink
+  // signal is needed, even when reassigning. A fresh directive always
+  // takes priority over whatever the on-disk $ref currently is (see
+  // server/src/lib/example.ts's deriveProperties: componentRefs is
+  // checked before the preserve-existing-$ref fallback).
   const handleLinkComponent = (path: string, componentName: string) => {
     if (!rawObj) return;
     const nextInputText = setComponentDirective(inputText, path, componentName);
@@ -529,9 +541,10 @@ export function SchemaEditor({ family, selection }: Props) {
     setRaw(JSON.stringify(nextRaw, null, 2));
   };
 
-  // Unlinks `path` — removes the directive comment and, for a top-level
-  // path only, also queues it in x-unlink-components so the next Apply
-  // doesn't preserve the still-on-disk $ref (see removeComponentDirective).
+  // Unlinks `path`. Removes the directive comment. For a top-level path
+  // only, also queues the path in x-unlink-components. This tells the
+  // next Apply not to preserve the still-on-disk $ref (see
+  // removeComponentDirective).
   const handleUnlinkComponent = (path: string) => {
     if (!rawObj) return;
     const nextInputText = removeComponentDirective(inputText, path);
@@ -566,7 +579,8 @@ export function SchemaEditor({ family, selection }: Props) {
     }
   };
 
-  // Single-pane Save — Base and Component both edit raw JSON text directly.
+  // The single-pane Save. Base and a component both edit raw JSON text
+  // directly.
   const handleSingleSave = async () => {
     if (!isEditable) return;
     try {
@@ -577,10 +591,10 @@ export function SchemaEditor({ family, selection }: Props) {
     }
   };
 
-  // Two-pane Save: what gets sent depends on which left tab is active —
-  // Input applies the annotated example text (the server derives
-  // properties/required from it), Rules applies whatever's already been
-  // edited into `raw` via handleRulesChange.
+  // The two-pane Save. What gets sent depends on which left tab is active.
+  // The Input tab applies the annotated example text. The server derives
+  // properties and required from it. The Constraints tab applies whatever
+  // has already been edited into `raw` through handleRulesChange.
   const handleTwoPaneSave = async () => {
     if (!rawObj) return;
     const nextContent =
@@ -629,7 +643,7 @@ export function SchemaEditor({ family, selection }: Props) {
           <div className="editor-split-left">
             {isBase && (
               <div className="usage-banner">
-                Locked — merged into every schema in this family. Changing it affects all of them immediately.
+                Locked. Base merges into every schema in this family. Changing it affects all of them immediately.
                 {baseLocked && (
                   <button className="enable-edit-button" onClick={() => setBaseEditingEnabled(true)}>
                     Enable editing
@@ -816,11 +830,11 @@ export function SchemaEditor({ family, selection }: Props) {
               </div>
               {selectedFixture && !selectedFixture.valid && (
                 <div className="panel error">
-                  This fixture is stale — it no longer validates against the current schema
-                  {selectedFixture.errorSummary && <>: {selectedFixture.errorSummary}</>}. Nothing updates fixtures
-                  automatically when the schema (or a component/base it depends on) changes. Click "Refresh
-                  Examples" at the top to fill in missing required fields automatically (other kinds of mismatches
-                  need a manual fix).
+                  This fixture is stale. It no longer validates against the current schema
+                  {selectedFixture.errorSummary && <>: {selectedFixture.errorSummary}</>}. Nothing updates a fixture
+                  automatically when the schema, or a component or base it depends on, changes. Click "Refresh
+                  Examples" at the top to fill in missing required fields automatically. Other kinds of mismatches
+                  need a manual fix.
                 </div>
               )}
               {exampleError && <div className="panel error">{exampleError}</div>}

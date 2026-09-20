@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { FieldPicker } from "./FieldPicker";
 import type { TreeNode } from "./JsonTree";
 
-// Lets someone link (or reassign/unlink) a field to an existing component
-// without hand-typing the `-- component: <name>` comment directive in the
-// Input tab — picks a field from this schema's own raw fields, picks a
-// component from the family's list, done.
+// Lets someone link a field to an existing component, without hand-typing
+// the `-- component: <name>` comment directive in the Input tab. Pick a
+// field from this schema's own raw fields, pick a component from the
+// family's list, done. The same control also reassigns or unlinks an
+// existing link.
 export function ComponentLinkPicker({
   treeNodes,
   links,
@@ -22,8 +23,9 @@ export function ComponentLinkPicker({
   const [newField, setNewField] = useState("");
   const [newComponent, setNewComponent] = useState(availableComponents[0] ?? "");
 
-  // availableComponents loads asynchronously in the parent — pick a default
-  // once it arrives if none was set yet (first render can still be empty).
+  // availableComponents loads asynchronously in the parent. Once it
+  // arrives, pick a default if none is set yet. The first render can
+  // still be empty.
   useEffect(() => {
     if (!newComponent && availableComponents.length > 0) setNewComponent(availableComponents[0]);
   }, [availableComponents, newComponent]);

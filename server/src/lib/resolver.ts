@@ -1,12 +1,13 @@
 // Resolves a schema into two forms:
-//   - raw: the as-authored file, $refs intact (default editor view)
-//   - resolved: base fields merged in (locked, must not collide) and every
-//     components/*.schema.json $ref recursively dereferenced/inlined
+//   - raw: the file as authored, with $refs intact (the default editor view)
+//   - resolved: base fields merged in (locked, must not collide), and every
+//     components/*.schema.json $ref recursively dereferenced and inlined
 //
-// $ref convention: within a family, refs always look like
-// "components/<name>.schema.json" regardless of whether they appear inside a
-// schema or inside another component (component nesting). No cross-family
-// refs, no external URLs — anything else is a hard error.
+// $ref convention: within a family, a ref always looks like
+// "components/<name>.schema.json". This is true whether the ref appears in
+// a schema or inside another component (component nesting). Refs across
+// families and external URLs are not allowed. Anything else is a hard
+// error.
 
 import { readBase, readComponent } from "./registryFs.js";
 import { RegistryError } from "../types.js";
@@ -24,12 +25,12 @@ export async function resolveSchema(family: string, schemaTitle: string, raw: un
   const baseProps = getProperties(base);
   const schemaProps = getProperties(resolvedRaw);
 
-  // Base fields are locked — a schema can't redeclare one — *unless* the
-  // base field is an "open extension point" (e.g. "details": a generic,
-  // schema-varying object with no declared shape of its own). In that case
-  // the schema's derived sub-shape is merged into base's generic definition
-  // for THIS schema's resolved output only; base itself and every other
-  // schema are untouched.
+  // Base fields are locked. A schema cannot redeclare one, with one
+  // exception: an "open extension point" (for example "details," a
+  // generic, schema-varying object with no declared shape of its own). For
+  // an open extension point, the schema's derived sub-shape merges into
+  // base's generic definition. This merge only affects THIS schema's
+  // resolved output. Base itself, and every other schema, stay unchanged.
   const mergedProperties: Record<string, unknown> = { ...baseProps };
   for (const [key, schemaProp] of Object.entries(schemaProps)) {
     if (key in baseProps) {
@@ -61,14 +62,18 @@ export async function resolveSchema(family: string, schemaTitle: string, raw: un
     : [];
   merged.required = [...new Set([...baseRequired, ...schemaRequired])];
 
-  // Explicit "required fields" list (x-required-fields, dot-paths) — a
-  // second, independent way to mark a field required, edited via the
-  // Constraints tab's picker rather than the example's `required` comment
-  // directive. Applied here (resolve time, not baked into properties at
-  // write time) so toggling it never needs a re-derivation, same reasoning
-  // as x-rules being compiled fresh on every resolve rather than stored
-  // pre-compiled. Authoring-only — stripped from what validators/consumers
-  // see, same as x-rules/x-example-source below.
+  // x-required-fields is a list of dot-paths: a second, independent way to
+  // mark a field required. You edit this list with the Constraints tab's
+  // picker, not with the example's `required` comment directive.
+  //
+  // This list is applied here, at resolve time, not baked into properties
+  // at write time. Toggling a field on or off this way never needs a
+  // re-derivation of the example. x-rules works the same way: it is
+  // compiled fresh on every resolve, not stored pre-compiled.
+  //
+  // x-required-fields is authoring-only. It is stripped from what
+  // validators and consumers see, the same as x-rules and x-example-source
+  // below.
   const explicitRequiredFields = Array.isArray((merged as Record<string, unknown>)["x-required-fields"])
     ? ((merged as Record<string, unknown>)["x-required-fields"] as string[])
     : [];
@@ -87,16 +92,18 @@ export async function resolveSchema(family: string, schemaTitle: string, raw: un
     applyRequiredPaths(merged, explicitRequiredFields);
   }
 
-  // Conditional rules: validate against the fully merged field set, compile
-  // to standard allOf/if/then for the resolved output, and strip the
-  // structured x-rules (an authoring-only, round-trippable representation)
-  // from what validators/consumers see.
+  // Conditional rules (x-rules): validate each rule against the fully
+  // merged field set, then compile the rules to standard allOf/if/then for
+  // the resolved output. x-rules itself is an authoring-only,
+  // round-trippable representation. Strip it from what validators and
+  // consumers see.
   const rules = Array.isArray((merged as Record<string, unknown>)["x-rules"])
     ? ((merged as Record<string, unknown>)["x-rules"] as Rule[])
     : [];
   delete merged["x-rules"];
-  // x-example-source (the annotated example text) is authoring-only too —
-  // strip it from what validators/consumers see, same as x-rules above.
+  // x-example-source (the annotated example text) is authoring-only too.
+  // Strip it from what validators and consumers see, the same as x-rules
+  // above.
   delete merged["x-example-source"];
 
   if (rules.length > 0) {
@@ -120,11 +127,11 @@ function getProperties(schema: unknown): Record<string, unknown> {
 }
 
 // Recursively walks a resolved property tree, collecting every valid
-// dot-path — both leaves and intermediate objects — for rule-field
-// validation. Only descends into declared `properties` of `type: "object"`
-// nodes (arrays/items are out of scope for nested rule targeting for now),
-// so a bogus path like "amount.sub" is naturally excluded (amount isn't an
-// object, so nothing under it is ever added).
+// dot-path. This includes both leaves and intermediate objects, and is used
+// for rule-field validation. It only descends into the declared
+// `properties` of `type: "object"` nodes. Array items are out of scope for
+// nested rule targeting today. This naturally excludes a bogus path like
+// "amount.sub": amount is not an object, so nothing under it is ever added.
 function flattenFieldPaths(properties: Record<string, unknown>, prefix = ""): Set<string> {
   const paths = new Set<string>();
   for (const [key, value] of Object.entries(properties)) {
@@ -140,11 +147,12 @@ function flattenFieldPaths(properties: Record<string, unknown>, prefix = ""): Se
   return paths;
 }
 
-// For each dot-path in `paths`, walks the already-merged/resolved tree
-// (base merge, $ref dereference, and open-extension-point merge all already
-// applied by the time this runs) and pushes the final segment into its
-// *containing* level's `required` array, creating the array if missing and
-// deduping. Mutates `merged` and its nested property nodes in place.
+// For each dot-path in `paths`, walks the already-merged, resolved tree.
+// (By the time this runs, the base merge, $ref dereference, and
+// open-extension-point merge are already applied.) Pushes the path's final
+// segment into its *containing* level's `required` array. Creates that
+// array if it is missing, and removes duplicates. Mutates `merged` and its
+// nested property nodes in place.
 function applyRequiredPaths(merged: Record<string, unknown>, paths: string[]): void {
   for (const path of paths) {
     const segments = path.split(".");
@@ -165,9 +173,10 @@ function applyRequiredPaths(merged: Record<string, unknown>, paths: string[]): v
   }
 }
 
-// Recursively walks a JSON value, replacing any { "$ref": "components/x.schema.json" }
-// node with the fully-dereferenced content of that component. `stack` tracks
-// component names currently being resolved, to detect reference cycles.
+// Recursively walks a JSON value. Replaces any
+// { "$ref": "components/x.schema.json" } node with the fully dereferenced
+// content of that component. `stack` tracks the component names currently
+// being resolved, to detect reference cycles.
 async function dereference(family: string, value: JsonValue, stack: string[]): Promise<JsonValue> {
   if (Array.isArray(value)) {
     return Promise.all(value.map((item) => dereference(family, item, stack)));
@@ -196,8 +205,9 @@ async function dereference(family: string, value: JsonValue, stack: string[]): P
       const componentRaw = await readComponent(family, componentName);
       const componentResolved = await dereference(family, componentRaw, [...stack, componentName]);
 
-      // Any sibling keys alongside $ref (unusual, but allowed by JSON Schema
-      // in some drafts) are merged on top of the dereferenced component.
+      // Some JSON Schema drafts allow sibling keys alongside $ref, though
+      // this is unusual. Merge any sibling keys on top of the dereferenced
+      // component.
       const { $ref: _drop, ...siblings } = obj;
       return { ...(componentResolved as Record<string, unknown>), ...siblings };
     }
@@ -214,9 +224,9 @@ async function dereference(family: string, value: JsonValue, stack: string[]): P
 
 // --- Reverse-dependency (impact) trace -------------------------------------
 
-// Scans every schema and component in the family for $ref usages and returns
-// the transitive set of things (components and schemas) that depend on the
-// given component, directly or through nested components.
+// Scans every schema and component in the family for $ref usages. Returns
+// the transitive set of components and schemas that depend on the given
+// component, either directly or through nested components.
 export async function findUsages(
   family: string,
   componentName: string,
@@ -232,7 +242,8 @@ export async function findUsages(
   const componentRefs = new Map(allComponents.map((c) => [c.name, directRefsOf(c.raw)]));
   const schemaRefs = new Map(allSchemas.map((s) => [s.name, directRefsOf(s.raw)]));
 
-  // A component/schema "uses" target if target is reachable via refs.
+  // A component or schema "uses" the target when the target is reachable
+  // through its refs, directly or via nested components.
   const dependsOn = (startRefs: Set<string>, target: string, seen = new Set<string>()): boolean => {
     for (const ref of startRefs) {
       if (ref === target) return true;

@@ -1,7 +1,7 @@
-// Thin wrapper around simple-git, scoped to the repo root. Git history is our
-// only version record (no semver) — this is what backs the future "History"
-// tab in the viewer. Scaffold-only: log is wired up now, diff rendering in
-// the UI is a follow-up iteration.
+// A thin wrapper around simple-git, scoped to the repo root. Git history is
+// this tool's only version record. There is no semver. This will back a
+// future "History" tab in the viewer. Today this is scaffold-only: log is
+// wired up, but diff rendering in the UI is a later step.
 
 import { simpleGit } from "simple-git";
 import path from "node:path";
@@ -26,8 +26,8 @@ export async function logForPath(absoluteFilePath: string): Promise<CommitInfo[]
       message: entry.message,
     }));
   } catch {
-    // Not a git repo yet, or file has no history — return empty rather than
-    // failing the request.
+    // Not a git repo yet, or the file has no history. Return empty instead
+    // of failing the request.
     return [];
   }
 }

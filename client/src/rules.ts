@@ -1,7 +1,7 @@
-// Client-side mirror of server/src/lib/rules.ts — same compilation logic,
-// used here only for the live "compiled preview" panel while editing. The
-// server is the authority for validation/persistence; this copy never writes
-// anything, it just previews what the server would produce.
+// A client-side mirror of server/src/lib/rules.ts. Same compilation logic.
+// Used only for the live "compiled preview" panel while editing. The server
+// is the authority for validation and persistence. This copy never writes
+// anything. It only previews what the server would produce.
 
 export type RuleOperator =
   | "equals"
@@ -107,8 +107,8 @@ function buildCondition(when: Rule["when"]): Record<string, unknown> {
   return nestAtParent(segments, { required: [last], properties: { [last]: buildFieldConstraint(operator, value) } }, true);
 }
 
-// See server/src/lib/rules.ts for the full rationale — same logic, kept in
-// sync manually since it's small.
+// See server/src/lib/rules.ts for the full rationale. Same logic, kept in
+// sync by hand since it is small.
 function nestAtParent(path: string[], leafAtParentLevel: Record<string, unknown>, requireAncestors: boolean): Record<string, unknown> {
   const ancestors = path.slice(0, -1);
   return ancestors.reduceRight<Record<string, unknown>>(

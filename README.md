@@ -1,22 +1,24 @@
 # JSON Schema Builder
 
-A local-first tool for building and managing a registry of JSON Schemas, organized into isolated **families** (e.g. `commerce`, `billing`). Each family has a locked **base config** that every schema in it inherits, a set of reusable **components**, and any number of **schemas** — authored by writing an example instance, not by hand-writing JSON Schema.
+A local-first tool for building and managing JSON Schemas. Schemas are organized into isolated **families**, for example `commerce` or `billing`. Each family has a locked **base config**. Every schema in the family inherits the base config. Each family also has reusable **components** and any number of **schemas**. You author a schema by writing an example instance. You do not hand-write JSON Schema.
 
-No database, no hosting — the registry is a folder of JSON files, versioned with git. There is no semver; git history is the only version record.
+The registry is a folder of JSON files. There is no database and no hosting. Git tracks all changes. There is no separate version number. Git history is the only version record.
 
 ## Why
 
-Most JSON Schema tooling assumes you already think in `properties`/`required`/`$ref`. This tool inverts that: you paste or type a representative example, optionally annotate a few fields with lightweight `--` comments, and the tool derives the schema. Conditional logic (`if`/`then`), shared sub-shapes, and locked cross-schema fields are all built as guided UI flows on top of that, not raw JSON editing.
+Most JSON Schema tools assume you already think in `properties`, `required`, and `$ref`. This tool works the other way. You paste or type a real example. You can add lightweight `--` comments to a few fields. The tool derives the schema from your example. Conditional logic (`if`/`then`), shared sub-shapes, and locked cross-schema fields are all guided UI flows. You never edit raw JSON Schema by hand.
 
 ## Features
 
-- **Families** — isolated bounded contexts; nothing is shared or referenced across family boundaries.
-- **Base config** — a locked set of fields (e.g. `id`, `createdAt`, `tenantId`) merged into every schema in a family. Editable, but locked by default in the UI as a safeguard, since a change affects every schema at once. A base field can also be marked an "open extension point" (a schema-varying generic object, e.g. `details`), letting individual schemas layer their own typed sub-fields on top of it.
-- **Components** — reusable, nestable schema fragments (e.g. `address`, `contact`), referenced via `$ref`. Existing inline shapes can be pulled out into a new component with **Extract Component**, which finds and patches the correct owning file even when the shape is nested inside another component.
-- **Example-driven schema authoring** — type an annotated JSON example; the tool derives `properties`/`required` from it. Fields are optional by default; mark one required with a `-- required` comment, or use the explicit "Required fields" picker in the Constraints tab. A value like `"card,check"` is read as declaring an enum.
-- **Constraints** — conditional rules (`WHEN field = X THEN require/forbid/restrict other fields`, including nested paths like `contact.email`), compiled to standard JSON Schema `allOf`/`if`/`then`, plus the unconditional required-fields list.
-- **Examples** — every schema shows a synthesized "Full" example (every field populated, nothing persisted), the current annotated example ("Primary"), and any hand-authored fixture files.
-- **Fixture staleness detection & sync** — fixtures are static files; nothing updates them automatically when a schema or a component/base it depends on changes. The tool validates each fixture against the *current* resolved schema and flags anything now invalid. A "Sync fixtures with schema" action fixes missing-required-field breaks and fills in newly-added optional fields, without ever touching existing values.
+- **Families** — Each family is an isolated context. Nothing is shared between families.
+- **Base config** — A locked set of fields, for example `id`, `createdAt`, `tenantId`. The base config merges into every schema in the family. You can edit the base config, but the UI locks it by default. This is a safeguard: a change to base affects every schema at once. A base field can also be an "open extension point." This is a generic object field, for example `details`, with no fixed shape. Each schema can add its own typed sub-fields inside an open extension point.
+- **Components** — Reusable schema fragments, for example `address` or `contact`. A schema or another component references a component with `$ref`. Components can nest inside other components.
+  - **Extract Component** pulls an existing inline shape out into a new, reusable component. It finds and updates the correct file, even when the shape is nested inside another component.
+  - **Component links** (in the Constraints tab) link a field to an existing component. Pick the field and the component from two dropdowns. The tool writes the correct `-- component: <name>` comment for you.
+- **Example-driven schema authoring** — Type an annotated JSON example. The tool derives `properties` and `required` from it. Fields are optional by default. Add a `-- required` comment to a field to make it required. You can also use the "Required fields" picker in the Constraints tab. A value like `"card,check"` declares an enum with two values.
+- **Constraints** — The Constraints tab holds three things: the required-fields list, component links, and conditional rules. A rule reads `WHEN field = X THEN require/forbid/restrict other fields`. Rules can target nested fields, for example `contact.email`. The tool compiles rules to standard JSON Schema `allOf`/`if`/`then`.
+- **Examples** — Every schema shows three kinds of example: a synthesized "Full" example with every field filled in, the current annotated example ("Primary"), and any hand-authored fixture files.
+- **Fixture staleness detection and repair** — Fixtures are static files. Nothing updates them automatically when a schema, component, or base changes. The tool checks each fixture against the schema's current resolved output and flags any fixture that is now invalid. Click "Refresh Examples" to fix missing-required-field errors and add newly-added optional fields. This action never changes an existing value.
 
 ## Getting started
 
@@ -25,13 +27,13 @@ npm install
 npm run dev
 ```
 
-Then open `http://localhost:5173`. The API server runs on `:3001`; the Vite dev server proxies `/api` to it.
+Open `http://localhost:5173`. The API server runs on port `3001`. The Vite dev server forwards `/api` requests to it.
 
 ## Project structure
 
 ```
-/registry                      # the actual schema data — a folder per family
-  registry.json                 # family -> description
+/registry                      # the actual schema data, one folder per family
+  registry.json                 # list of families and descriptions
   /<family>
     family.json
     base.schema.json            # locked base config for this family
@@ -39,8 +41,8 @@ Then open `http://localhost:5173`. The API server runs on `:3001`; the Vite dev 
     /schemas/*.schema.json
     /tests/<schema>/*.json      # hand-authored fixtures
 
-/server                        # Fastify API (Node/TypeScript)
-  src/lib/                      # resolver, rule compiler, example derivation, extraction, fixture validation/repair
+/server                        # Fastify API (Node.js, TypeScript)
+  src/lib/                      # resolver, rule compiler, example derivation, extraction, fixture validation and repair
   src/routes/                   # one file per resource
 
 /client                        # React + Vite frontend
@@ -51,8 +53,8 @@ Then open `http://localhost:5173`. The API server runs on `:3001`; the Vite dev 
 
 - **Backend**: Node.js, TypeScript, Fastify, ajv
 - **Frontend**: React, TypeScript, Vite, Monaco Editor
-- **Storage**: flat JSON files under `/registry`, versioned with git
+- **Storage**: flat JSON files under `/registry`, tracked with git
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

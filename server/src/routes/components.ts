@@ -42,8 +42,8 @@ export async function componentRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  // Single synthesized example — same generator used for a schema's "Full
-  // (generated)" example, computed on demand rather than persisted.
+  // A single synthesized example. Uses the same generator as a schema's
+  // "Full (generated)" example. Computed on demand, not persisted.
   app.get<{ Params: { family: string; component: string } }>(
     "/api/families/:family/components/:component/example",
     async (req) => {
@@ -64,7 +64,8 @@ export async function componentRoutes(app: FastifyInstance): Promise<void> {
         throw new RegistryError("Request body must be a JSON object (a JSON Schema document).", 400);
       }
 
-      // Validate refs resolve (also detects cycles) before persisting.
+      // Validate that all refs resolve before persisting. This also
+      // detects cycles.
       await resolveComponent(family, content);
       await writeComponent(family, component, content);
 

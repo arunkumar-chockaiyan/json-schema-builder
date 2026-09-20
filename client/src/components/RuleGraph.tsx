@@ -11,23 +11,26 @@ interface Props {
 
 const MAX_CONSTRAIN_LABEL_LENGTH = 24;
 
-// Joins constrain values for display, truncating with an ellipsis once the
-// joined text passes a sensible length rather than letting one rule's badge
-// blow out the whole row.
+// Joins constrain values for display. Truncates with an ellipsis once the
+// joined text passes a sensible length. This stops one rule's badge from
+// stretching the whole row.
 function formatConstrainValues(values: unknown[]): string {
   const joined = values.map(String).join(", ");
   return joined.length > MAX_CONSTRAIN_LABEL_LENGTH ? `${joined.slice(0, MAX_CONSTRAIN_LABEL_LENGTH)}…` : joined;
 }
 
-// Lightweight, dependency-free visualization scoped only to rule
-// participants (not the whole schema tree) — one flow row per rule:
-// WHEN field --operator:value--> THEN fields. Plain HTML/CSS, no canvas or
-// graphing library; the rule counts this tool targets don't need one. Also
-// doubles as the primary Rules list — each row shows edit/delete icons
-// (when the corresponding callback is provided) rather than rules being
-// permanently editable inline. When a rule is being edited, `renderEditor`
-// is rendered directly beneath its row, inside the same bordered container,
-// so it's unambiguous which rule the editor belongs to.
+// A lightweight visualization with no extra dependencies. It shows only the
+// fields a rule touches, not the whole schema tree. One flow row per rule:
+// WHEN field --operator:value--> THEN fields. Plain HTML and CSS, with no
+// canvas or graphing library. The number of rules this tool targets does
+// not need one.
+//
+// This component also doubles as the primary rule list. Each row shows
+// edit and delete icons, when the matching callback is provided, instead of
+// making rules permanently editable inline. When a rule is being edited,
+// `renderEditor` renders directly beneath its row, inside the same
+// bordered container. This makes it unambiguous which rule the editor
+// belongs to.
 export function RuleGraph({ rules, onEdit, onDelete, editingId, renderEditor }: Props) {
   if (rules.length === 0) {
     return <p className="muted">No rules to visualize yet.</p>;
