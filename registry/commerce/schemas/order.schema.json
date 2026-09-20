@@ -3,6 +3,24 @@
   "title": "commerce.order",
   "type": "object",
   "properties": {
+    "details": {
+      "type": "object",
+      "properties": {
+        "order": {
+          "type": "object",
+          "properties": {
+            "number": {
+              "type": "number"
+            },
+            "amount": {
+              "type": "number"
+            }
+          },
+          "required": []
+        }
+      },
+      "required": []
+    },
     "amount": {
       "type": "number",
       "description": "Order total before tax, in the currency listed below"
@@ -26,6 +44,14 @@
       ],
       "description": "How this order was paid for."
     },
+    "expressFee": {
+      "type": "number",
+      "description": "Surcharge applied to express orders (only required for express orders — see Rules)."
+    },
+    "cardNumber": {
+      "type": "string",
+      "description": "Card number, only applicable for card payments (see Rules)."
+    },
     "shippingInfo": {
       "$ref": "components/shippingInfo.schema.json"
     },
@@ -41,6 +67,72 @@
     "shippingInfo",
     "contact"
   ],
-  "x-rules": [],
-  "x-example-source": "{\n  \"id\": \"8f14e45f-ceea-467e-9575-8e18c1eae7a3\",\n  \"createdAt\": \"2026-09-19T12:00:00Z\",\n  \"tenantId\": \"tenant-001\",\n  \"region\": \"us-east\",\n  \"details\": {},  -- Order-specific extra data; shape is up to this schema.\n  \"amount\": 129.99,  -- Order total before tax, in the currency listed below\n  \"currency\": \"USD\",\n  \"type\": \"standard,express\",  -- Shipping speed for this order.\n  \"paymentMethod\": \"card,check\",  -- How this order was paid for.\n  \"shippingInfo\": {\n    \"method\": \"standard\"\n  },\n  \"contact\": {\n    \"name\": \"Jane Doe\",\n    \"email\": \"jane@example.com\"\n  }\n}"
+  "x-rules": [
+    {
+      "id": "9245d09c-eb96-4b82-ae84-517226f6849d",
+      "when": {
+        "field": "region",
+        "operator": "equals",
+        "value": "us"
+      },
+      "then": {
+        "require": [
+          "amount"
+        ]
+      }
+    },
+    {
+      "id": "card-requires-email",
+      "when": {
+        "field": "paymentMethod",
+        "operator": "equals",
+        "value": "card"
+      },
+      "then": {
+        "require": [
+          "contact.email"
+        ]
+      }
+    },
+    {
+      "id": "express-requires-order-number",
+      "when": {
+        "field": "type",
+        "operator": "equals",
+        "value": "express"
+      },
+      "then": {
+        "require": [
+          "details.order.number"
+        ]
+      }
+    },
+    {
+      "id": "express-requires-fee",
+      "when": {
+        "field": "type",
+        "operator": "equals",
+        "value": "express"
+      },
+      "then": {
+        "require": [
+          "expressFee"
+        ]
+      }
+    },
+    {
+      "id": "check-forbids-card-number",
+      "when": {
+        "field": "paymentMethod",
+        "operator": "equals",
+        "value": "check"
+      },
+      "then": {
+        "forbid": [
+          "cardNumber"
+        ]
+      }
+    }
+  ],
+  "x-example-source": "{\n  \"id\": \"8f14e45f-ceea-467e-9575-8e18c1eae7a3\",\n  \"createdAt\": \"2026-09-19T12:00:00Z\",\n  \"tenantId\": \"tenant-001\",\n  \"region\": \"us-east\",\n  \"details\": {\n    \"order\": {\n      \"number\": 1234,\n      \"amount\": 75\n    }\n  },\n  \"amount\": 129.99,  -- required; Order total before tax, in the currency listed below\n  \"currency\": \"USD\",  -- required\n  \"type\": \"standard,express\",  -- required; Shipping speed for this order.\n  \"paymentMethod\": \"card,check\",  -- required; How this order was paid for.\n  \"expressFee\": 15,  -- Surcharge applied to express orders (only required for express orders — see Rules).\n  \"cardNumber\": \"4111111111111111\",  -- Card number, only applicable for card payments (see Rules).\n  -- required\n  \"shippingInfo\": {\n    \"method\": \"standard\"\n  },\n  -- required\n  \"contact\": {\n    \"name\": \"Jane Doe\",\n    \"email\": \"jane@example.com\"\n  }\n}"
 }

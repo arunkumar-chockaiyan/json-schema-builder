@@ -1,12 +1,24 @@
 // Annotated-example parsing + schema derivation. The left-hand "Input" editor
 // lets someone author a plain JSON example with lightweight `--` comments
-// (description-only this pass) instead of hand-writing JSON Schema. This
-// module turns that text into `properties`/`required`, which the schema PUT
-// route (server/src/routes/schemas.ts) merges into the saved schema.
+// instead of hand-writing JSON Schema. This module turns that text into
+// `properties`/`required`, which the schema PUT route
+// (server/src/routes/schemas.ts) merges into the saved schema.
+//
+// Fields are OPTIONAL by default — presence in the example only defines the
+// field's shape, not its required-ness. A field becomes required via the
+// `required` directive in its comment, or via the separate x-required-fields
+// list applied at resolve time (see resolver.ts's applyRequiredPaths).
 //
 // Comment placement supported:
 //   "key": value,   -- trailing comment describing `key`
 //   -- comment on its own line, describing the *next* key's line
+//
+// Comment content is `directive[; directive]* description?`, e.g.:
+//   "status": "active",  -- required
+//   "amount": 129.99,    -- required; Order total before tax
+//   "notes": "",         -- Freeform notes (no directive = optional, description only)
+// The only recognized directive today is `required`; anything else in the
+// comment is treated as description text.
 //
 // A "--" inside a JSON string value is not mistaken for a comment start —
 // the scanner tracks whether it's inside a string literal.
@@ -16,12 +28,13 @@ export interface DerivedSchema {
   required: string[];
 }
 
-// Strips `--` comments from `source`, returning the now-plain JSON text plus
-// a map of dot-path -> comment text for every field a comment was attached
-// to (trailing on the field's own line, or on the line directly above it).
-export function stripComments(source: string): { json: string; comments: Map<string, string> } {
+// Strips `--` comments from `source`, returning the now-plain JSON text, a
+// map of dot-path -> description text, and the set of dot-paths whose
+// comment carried the `required` directive.
+export function stripComments(source: string): { json: string; comments: Map<string, string>; requiredPaths: Set<string> } {
   const lines = source.split("\n");
   const comments = new Map<string, string>();
+  const requiredPaths = new Set<string>();
   const pathStack: string[] = [];
   const jsonLines: string[] = [];
   let pendingComment: string | null = null;
@@ -46,7 +59,11 @@ export function stripComments(source: string): { json: string; comments: Map<str
       const valueStart = match[2];
       const path = [...pathStack, key].join(".");
       const text = comment ?? pendingComment ?? undefined;
-      if (text) comments.set(path, text);
+      if (text) {
+        const { required, description } = parseDirectives(text);
+        if (required) requiredPaths.add(path);
+        if (description) comments.set(path, description);
+      }
       pendingComment = null;
 
       // Track nesting so later keys get the right dot-path.
@@ -64,7 +81,24 @@ export function stripComments(source: string): { json: string; comments: Map<str
     jsonLines.push(code);
   }
 
-  return { json: jsonLines.join("\n"), comments };
+  return { json: jsonLines.join("\n"), comments, requiredPaths };
+}
+
+// Splits a comment's text into directives and freeform description,
+// separated by `;`. The only recognized directive is `required`
+// (case-insensitive); everything else joins back into the description.
+function parseDirectives(text: string): { required: boolean; description?: string } {
+  const parts = text.split(";").map((s) => s.trim());
+  let required = false;
+  const rest: string[] = [];
+  for (const part of parts) {
+    if (part.toLowerCase() === "required") {
+      required = true;
+    } else if (part.length > 0) {
+      rest.push(part);
+    }
+  }
+  return { required, description: rest.length > 0 ? rest.join("; ") : undefined };
 }
 
 // Splits a line into its JSON code and trailing `-- comment`, ignoring any
@@ -84,23 +118,38 @@ function splitTrailingComment(line: string): { code: string; comment: string | n
   return { code: line, comment: null };
 }
 
-// Walks a parsed example value into properties/required. Every present key
-// becomes required (an example is "what a complete valid instance
-// contains" — there's no way to mark a field optional this pass). Any
-// top-level field whose *existing* schema is a bare $ref is preserved
-// untouched rather than replaced with an inferred inline shape, so
-// component wiring (e.g. "contact": {"$ref": "components/contact.schema.json"})
-// survives being re-derived from the example. Top-level keys that belong to
-// the family's locked base (baseFieldNames) are skipped entirely — base
-// exclusively owns those fields, so re-deriving them here would either
-// duplicate or (worse) collide with the base's own definition.
+// A base property counts as an "open extension point" when it's a plain
+// object with no declared shape of its own (type: "object", no `properties`,
+// additionalProperties: true) — e.g. base's "details" field. Everything else
+// (id, createdAt, ...) is fully locked, unchanged. Schemas may layer their
+// own typed sub-fields inside an open field (see deriveProperties below and
+// resolveSchema's merge in resolver.ts); closed fields stay untouchable.
+export function isOpenExtensionPoint(schema: unknown): boolean {
+  const s = schema as Record<string, unknown> | undefined;
+  return !!s && s.type === "object" && !s.properties && s.additionalProperties === true;
+}
+
+// Walks a parsed example value into properties/required. Fields are
+// OPTIONAL by default — a key only becomes required if its path is in
+// `requiredPaths` (populated by the `required` comment directive, see
+// stripComments). Any top-level field whose *existing* schema is a bare
+// $ref is preserved untouched rather than replaced with an inferred inline
+// shape, so component wiring (e.g. "contact": {"$ref":
+// "components/contact.schema.json"}) survives being re-derived from the
+// example. Top-level keys that belong to the family's locked base
+// (baseFields) are normally skipped entirely — base exclusively owns those
+// fields — *except* when the base field is an open extension point, in
+// which case its nested shape IS derived (ending up in this schema's own
+// properties[key]), to be merged into base's generic definition by
+// resolveSchema (see resolver.ts) for this schema only.
 export function deriveProperties(
   exampleValue: unknown,
   existingProperties: Record<string, unknown>,
   comments: Map<string, string>,
+  requiredPaths: Set<string>,
   pathPrefix = "",
   isTopLevel = true,
-  baseFieldNames: Set<string> = new Set(),
+  baseFields: Map<string, Record<string, unknown>> = new Map(),
 ): DerivedSchema {
   const properties: Record<string, unknown> = {};
   const required: string[] = [];
@@ -110,10 +159,12 @@ export function deriveProperties(
   }
 
   for (const [key, value] of Object.entries(exampleValue as Record<string, unknown>)) {
-    if (isTopLevel && baseFieldNames.has(key)) continue;
+    if (isTopLevel && baseFields.has(key) && !isOpenExtensionPoint(baseFields.get(key))) {
+      continue;
+    }
 
     const path = pathPrefix ? `${pathPrefix}.${key}` : key;
-    required.push(key);
+    if (requiredPaths.has(path)) required.push(key);
 
     const existing = existingProperties[key] as Record<string, unknown> | undefined;
     if (isTopLevel && existing && isBareRef(existing)) {
@@ -122,7 +173,7 @@ export function deriveProperties(
       continue;
     }
 
-    properties[key] = deriveNode(value, comments, path, existing);
+    properties[key] = deriveNode(value, comments, requiredPaths, path, existing);
   }
 
   return { properties, required };
@@ -131,6 +182,7 @@ export function deriveProperties(
 function deriveNode(
   value: unknown,
   comments: Map<string, string>,
+  requiredPaths: Set<string>,
   path: string,
   existing: Record<string, unknown> | undefined,
 ): Record<string, unknown> {
@@ -141,11 +193,21 @@ function deriveNode(
   }
   if (Array.isArray(value)) {
     const itemsExisting = existing?.items as Record<string, unknown> | undefined;
-    const items = value.length > 0 ? deriveNode(value[0], comments, `${path}.items`, itemsExisting) : (itemsExisting ?? {});
+    const items =
+      value.length > 0
+        ? deriveNode(value[0], comments, requiredPaths, `${path}.items`, itemsExisting)
+        : (itemsExisting ?? {});
     return withDescription({ type: "array", items }, description);
   }
   if (typeof value === "object") {
-    const nested = deriveProperties(value, (existing?.properties as Record<string, unknown>) ?? {}, comments, path, false);
+    const nested = deriveProperties(
+      value,
+      (existing?.properties as Record<string, unknown>) ?? {},
+      comments,
+      requiredPaths,
+      path,
+      false,
+    );
     return withDescription(
       { type: "object", properties: nested.properties, required: nested.required },
       description,
@@ -218,7 +280,7 @@ export class MissingBaseFieldsError extends Error {
 }
 
 export function parseAndDerive(source: string, existingProperties: Record<string, unknown>, base: BaseSummary): DerivedSchema {
-  const { json, comments } = stripComments(source);
+  const { json, comments, requiredPaths } = stripComments(source);
   const parsed = JSON.parse(json);
 
   const exampleKeys = new Set(
@@ -229,6 +291,6 @@ export function parseAndDerive(source: string, existingProperties: Record<string
     throw new MissingBaseFieldsError(missing);
   }
 
-  const baseFieldNames = new Set(Object.keys(base.properties));
-  return deriveProperties(parsed, existingProperties, comments, "", true, baseFieldNames);
+  const baseFields = new Map(Object.entries(base.properties)) as Map<string, Record<string, unknown>>;
+  return deriveProperties(parsed, existingProperties, comments, requiredPaths, "", true, baseFields);
 }

@@ -404,12 +404,34 @@ body {
 
 .example-selector {
   margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .example-selector select {
   padding: 0.3rem 0.5rem;
   border: 1px solid #ccc;
   border-radius: 4px;
+}
+
+.repair-button {
+  background: #b45309;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.repair-button:hover {
+  background: #92400e;
+}
+
+.repair-button:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 /* Two-pane schema editor */

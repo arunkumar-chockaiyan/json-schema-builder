@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { OPERATOR_LABELS, newRuleId, type Rule, type RuleOperator } from "../rules";
 import { JsonTree, type TreeNode } from "./JsonTree";
 import { FieldPicker } from "./FieldPicker";
@@ -17,17 +17,17 @@ interface Props {
   onChange: (rules: Rule[]) => void;
 }
 
-// Rule fields are restricted to top-level nodes — the compiler only
-// supports top-level fields today — but the full nested/component-derived
-// structure is still visible in the picker for browsing.
-function topLevelSelectable(excludeField?: string) {
-  return (n: TreeNode) => n.depth === 0 && n.path !== excludeField;
+// Any field at any depth can be a rule target (the compiler supports nested
+// dot-paths, wrapping properties/required through each ancestor) — just not
+// the field the rule's own WHEN condition is already keyed on.
+function fieldSelectable(excludeField?: string) {
+  return (n: TreeNode) => n.path !== excludeField;
 }
 
 // Multi-select field picker: chips for each selected path + an "add field"
 // trigger that opens the same inline tree; clicking a selected node again
 // removes it.
-function FieldMultiPicker({
+export function FieldMultiPicker({
   treeNodes,
   values,
   onChange,
@@ -64,7 +64,7 @@ function FieldMultiPicker({
           <JsonTree
             nodes={treeNodes}
             selectable
-            isSelectable={(n) => n.depth === 0 && n.path !== excludeField}
+            isSelectable={fieldSelectable(excludeField)}
             selectedPaths={values}
             onSelect={toggle}
           />
@@ -188,6 +188,20 @@ function RuleEditorCard({
   onCancel: () => void;
 }) {
   const whenField = fieldInfo(fields, rule.when.field);
+  // Decoupled from rule.then.constrain.enum on purpose: that array is
+  // trimmed/filtered on every change (dropping empty trailing entries), so
+  // binding the input's value straight to enum.join(", ") snaps back and
+  // erases whatever's being typed the moment you type a trailing comma —
+  // you'd never be able to start a second value. Local text state tracks
+  // exactly what's typed; the derived enum array still updates live.
+  const [constrainText, setConstrainText] = useState(() => rule.then.constrain?.enum.join(", ") ?? "");
+
+  useEffect(() => {
+    setConstrainText(rule.then.constrain?.enum.join(", ") ?? "");
+    // Only re-sync when switching to a different rule — not on every
+    // keystroke's derived-array update, which would fight the local state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rule.id]);
 
   return (
     <div className="rule-card rule-card-editing">
@@ -196,7 +210,7 @@ function RuleEditorCard({
         <FieldPicker
           treeNodes={treeNodes}
           value={rule.when.field}
-          isSelectable={topLevelSelectable()}
+          isSelectable={fieldSelectable()}
           onChange={(field) => onChange((r) => ({ ...r, when: { ...r.when, field, value: "" } }))}
         />
         <select
@@ -242,7 +256,6 @@ function RuleEditorCard({
           addLabel="+ add field"
           onChange={(next) => onChange((r) => ({ ...r, then: { ...r.then, forbid: next } }))}
         />
-        <span className="muted rule-hint">field must not be present when this condition holds</span>
       </div>
 
       <div className="rule-row">
@@ -250,17 +263,19 @@ function RuleEditorCard({
           <input
             type="checkbox"
             checked={!!rule.then.constrain}
-            onChange={(e) =>
+            onChange={(e) => {
+              const checked = e.target.checked;
               onChange((r) => ({
                 ...r,
                 then: {
                   ...r.then,
-                  constrain: e.target.checked
+                  constrain: checked
                     ? { field: fields.find((f) => f.name !== r.when.field)?.name ?? "", enum: [] }
                     : undefined,
                 },
-              }))
-            }
+              }));
+              if (checked) setConstrainText("");
+            }}
           />
           also restrict a field to specific values
         </label>
@@ -269,7 +284,7 @@ function RuleEditorCard({
             <FieldPicker
               treeNodes={treeNodes}
               value={rule.then.constrain.field}
-              isSelectable={topLevelSelectable(rule.when.field)}
+              isSelectable={fieldSelectable(rule.when.field)}
               onChange={(field) =>
                 onChange((r) => ({
                   ...r,
@@ -280,22 +295,24 @@ function RuleEditorCard({
             <input
               type="text"
               placeholder="allowed value1, value2, ..."
-              value={rule.then.constrain.enum.join(", ")}
-              onChange={(e) =>
+              value={constrainText}
+              onChange={(e) => {
+                const text = e.target.value;
+                setConstrainText(text);
                 onChange((r) => ({
                   ...r,
                   then: {
                     ...r.then,
                     constrain: {
                       field: r.then.constrain?.field ?? "",
-                      enum: e.target.value
+                      enum: text
                         .split(",")
                         .map((v) => v.trim())
                         .filter((v) => v.length > 0),
                     },
                   },
-                }))
-              }
+                }));
+              }}
             />
           </>
         )}

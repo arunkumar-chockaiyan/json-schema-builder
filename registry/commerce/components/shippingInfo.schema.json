@@ -8,10 +8,14 @@
     },
     "instructions": {
       "type": "string"
+    },
+    "description": {
+      "type": "string"
     }
   },
   "required": [
-    "method"
+    "method",
+    "description"
   ],
   "description": "Delivery instructions for this order."
 }

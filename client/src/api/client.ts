@@ -50,7 +50,9 @@ export const api = {
     }),
 
   listExamples: (family: string, schema: string) =>
-    request<{ names: string[] }>(`/families/${family}/schemas/${schema}/examples`),
+    request<{ examples: { name: string; valid: boolean; errorSummary?: string }[] }>(
+      `/families/${family}/schemas/${schema}/examples`,
+    ),
 
   getExample: (family: string, schema: string, name: string) =>
     request<unknown>(`/families/${family}/schemas/${schema}/examples/${name}`),
@@ -60,6 +62,17 @@ export const api = {
 
   getPrimaryExample: (family: string, schema: string) =>
     request<unknown>(`/families/${family}/schemas/${schema}/examples/_primary`),
+
+  repairFixtures: (family: string, schema: string) =>
+    request<{
+      repaired: {
+        name: string;
+        valid: boolean;
+        repairedFields: string[];
+        addedOptionalFields: string[];
+        remainingErrors?: string[];
+      }[];
+    }>(`/families/${family}/schemas/${schema}/examples/repair`, { method: "POST" }),
 
   extractComponent: (
     family: string,

@@ -156,3 +156,9 @@ export async function listTestCases(family: string, schema: string): Promise<str
 export async function readTestCase(family: string, schema: string, name: string): Promise<unknown> {
   return readJson(testCasePath(family, schema, name));
 }
+
+export async function writeTestCase(family: string, schema: string, name: string, content: unknown): Promise<void> {
+  const dir = testCasesDir(family, schema);
+  await fs.mkdir(dir, { recursive: true });
+  await writeJson(testCasePath(family, schema, name), content);
+}

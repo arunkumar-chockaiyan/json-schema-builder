@@ -15,7 +15,16 @@
     "country": {
       "type": "string",
       "description": "ISO 3166-1 alpha-2 country code."
+    },
+    "unit": {
+      "type": "string",
+      "description": "Apartment/suite number (optional)."
     }
   },
-  "required": ["line1", "city", "postalCode", "country"]
+  "required": [
+    "line1",
+    "city",
+    "postalCode",
+    "country"
+  ]
 }

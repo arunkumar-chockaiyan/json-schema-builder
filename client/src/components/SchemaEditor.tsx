@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import Editor from "@monaco-editor/react";
 import { api } from "../api/client";
 import type { Selection } from "../App";
-import { RuleBuilder, type FieldInfo } from "./RuleBuilder";
+import { RuleBuilder, FieldMultiPicker, type FieldInfo } from "./RuleBuilder";
 import { JsonTree, buildExampleTree, buildSchemaTree } from "./JsonTree";
-import { compileRules, type Rule } from "../rules";
+import type { Rule } from "../rules";
 
 interface Props {
   family: string;
@@ -67,7 +67,9 @@ export function SchemaEditor({ family, selection }: Props) {
 
   const [inputText, setInputText] = useState<string>("{}");
 
-  const [fixtureNames, setFixtureNames] = useState<string[]>([]);
+  const [fixtures, setFixtures] = useState<{ name: string; valid: boolean; errorSummary?: string }[]>([]);
+  const [repairing, setRepairing] = useState(false);
+  const [repairSummary, setRepairSummary] = useState<string | null>(null);
   const [baseRequiredFields, setBaseRequiredFields] = useState<string[]>([]);
   const [exampleSelection, setExampleSelection] = useState<string>(GENERATED_EXAMPLE_KEY);
   const [exampleData, setExampleData] = useState<unknown>(undefined);
@@ -143,22 +145,28 @@ export function SchemaEditor({ family, selection }: Props) {
       .catch(() => setBaseRequiredFields([]));
   }, [family, selection]);
 
-  // Fixture (saved test case) list — independent of the source/resolved/rules
-  // fetch above so a schema with no fixtures doesn't block those.
-  useEffect(() => {
+  // Fixture (saved test case) list, with each one's validity against the
+  // schema's *current* resolved output — fixtures are static files, nothing
+  // updates them automatically when the schema (or a component/base it
+  // depends on) changes, so this is how staleness surfaces. Independent of
+  // the source/resolved/rules fetch above so a schema with no fixtures
+  // doesn't block those.
+  const reloadFixtures = () => {
     if (selection.kind !== "schema") {
-      setFixtureNames([]);
+      setFixtures([]);
       return;
     }
     api
       .listExamples(family, selection.name)
-      .then(({ names }) => setFixtureNames(names))
+      .then(({ examples }) => setFixtures(examples))
       .catch((err) => setExampleError(err instanceof Error ? err.message : String(err)));
-  }, [family, selection]);
+  };
+
+  useEffect(reloadFixtures, [family, selection]);
 
   // Right-half Examples tab: reload whenever the dropdown selection (or the
   // schema itself) changes.
-  useEffect(() => {
+  const reloadExampleData = () => {
     if (selection.kind !== "schema") {
       setExampleData(undefined);
       return;
@@ -175,7 +183,40 @@ export function SchemaEditor({ family, selection }: Props) {
       .then(setExampleData)
       .catch((err) => setExampleError(err instanceof Error ? err.message : String(err)))
       .finally(() => setExampleLoading(false));
-  }, [family, selection, exampleSelection]);
+  };
+
+  useEffect(reloadExampleData, [family, selection, exampleSelection]);
+
+  const handleRepairFixtures = async () => {
+    if (selection.kind !== "schema") return;
+    setRepairing(true);
+    setRepairSummary(null);
+    try {
+      const { repaired } = await api.repairFixtures(family, selection.name);
+      const requiredFixedCount = repaired.filter((r) => r.repairedFields.length > 0).length;
+      const optionalAddedCount = repaired.filter((r) => r.addedOptionalFields.length > 0).length;
+      const stillInvalid = repaired.filter((r) => !r.valid);
+
+      const parts: string[] = [];
+      if (requiredFixedCount > 0) {
+        parts.push(`fixed ${requiredFixedCount} fixture${requiredFixedCount === 1 ? "" : "s"} missing a required field`);
+      }
+      if (optionalAddedCount > 0) {
+        parts.push(`added new optional fields to ${optionalAddedCount} fixture${optionalAddedCount === 1 ? "" : "s"}`);
+      }
+      let summary = parts.length > 0 ? `Repaired: ${parts.join("; ")}.` : "Fixtures already match the current schema.";
+      if (stillInvalid.length > 0) {
+        summary += ` ${stillInvalid.length} still invalid (needs a manual fix — see the fixture's error below).`;
+      }
+      setRepairSummary(summary);
+      reloadFixtures();
+      reloadExampleData();
+    } catch (err) {
+      setRepairSummary(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRepairing(false);
+    }
+  };
 
   // Structured view over `raw` — parses on every raw change so Rules and the
   // Input tab's seed text stay in sync with what's actually persisted.
@@ -190,7 +231,10 @@ export function SchemaEditor({ family, selection }: Props) {
     () => (Array.isArray(rawObj?.["x-rules"]) ? (rawObj!["x-rules"] as Rule[]) : []),
     [rawObj],
   );
-  const compiledPreview = useMemo(() => JSON.stringify(compileRules(rules), null, 2), [rules]);
+  const requiredFields = useMemo(
+    () => (Array.isArray(rawObj?.["x-required-fields"]) ? (rawObj!["x-required-fields"] as string[]) : []),
+    [rawObj],
+  );
 
   // Seed the Input tab's text whenever `raw` (re)loads — from the schema's
   // own x-example-source if it has one, else an empty object to start from.
@@ -203,6 +247,12 @@ export function SchemaEditor({ family, selection }: Props) {
   const handleRulesChange = (nextRules: Rule[]) => {
     if (!rawObj) return;
     const nextRaw = { ...rawObj, "x-rules": nextRules };
+    setRaw(JSON.stringify(nextRaw, null, 2));
+  };
+
+  const handleRequiredFieldsChange = (nextRequired: string[]) => {
+    if (!rawObj) return;
+    const nextRaw = { ...rawObj, "x-required-fields": nextRequired };
     setRaw(JSON.stringify(nextRaw, null, 2));
   };
 
@@ -330,8 +380,9 @@ export function SchemaEditor({ family, selection }: Props) {
   const exampleOptions = [
     GENERATED_EXAMPLE_KEY,
     ...(hasPrimaryExample ? [PRIMARY_EXAMPLE_KEY] : []),
-    ...fixtureNames,
+    ...fixtures.map((f) => f.name),
   ];
+  const selectedFixture = fixtures.find((f) => f.name === exampleSelection);
 
   return (
     <div className="editor-pane">
@@ -349,7 +400,7 @@ export function SchemaEditor({ family, selection }: Props) {
               Input
             </button>
             <button className={leftTab === "rules" ? "active" : ""} onClick={() => setLeftTab("rules")}>
-              Rules {rules.length > 0 && `(${rules.length})`}
+              Constraints {(rules.length > 0 || requiredFields.length > 0) && `(${rules.length + requiredFields.length})`}
             </button>
           </div>
 
@@ -357,7 +408,8 @@ export function SchemaEditor({ family, selection }: Props) {
             <>
               <p className="muted split-hint">
                 Enter an example instance. Add <code>-- a comment</code> after (or above) a field to set its
-                description. Every field present becomes required. A comma-separated value like{" "}
+                description. Fields are optional by default — add <code>-- required</code> (or{" "}
+                <code>-- required; description</code>) to make one required. A comma-separated value like{" "}
                 <code>"card,check"</code> becomes an enum of those values (the first is used as this example's
                 value).
                 {baseRequiredFields.length > 0 && (
@@ -381,10 +433,20 @@ export function SchemaEditor({ family, selection }: Props) {
                 <p className="muted">This schema has no properties yet — enter an example on the Input tab first.</p>
               ) : (
                 <>
+                  <h4>Required fields</h4>
+                  <p className="muted">
+                    Fields are optional by default. Add fields here to require them unconditionally, independent of
+                    the <code>-- required</code> comment directive on the Input tab — useful for base-inherited or
+                    component-nested fields the example doesn't spell out directly.
+                  </p>
+                  <FieldMultiPicker
+                    treeNodes={schemaTreeNodes}
+                    values={requiredFields}
+                    addLabel="+ require field"
+                    onChange={handleRequiredFieldsChange}
+                  />
                   <h4>Rules</h4>
                   <RuleBuilder rules={rules} fields={fields} treeNodes={schemaTreeNodes} onChange={handleRulesChange} />
-                  <h4>Compiled preview (what "Schema" will contain)</h4>
-                  <pre className="compiled-preview">{compiledPreview}</pre>
                 </>
               )}
             </div>
@@ -414,14 +476,34 @@ export function SchemaEditor({ family, selection }: Props) {
                 <label>
                   Example:{" "}
                   <select value={exampleSelection} onChange={(e) => setExampleSelection(e.target.value)}>
-                    {exampleOptions.map((name) => (
-                      <option key={name} value={name}>
-                        {name === GENERATED_EXAMPLE_KEY ? "Full (generated)" : name === PRIMARY_EXAMPLE_KEY ? "Primary" : name}
-                      </option>
-                    ))}
+                    {exampleOptions.map((name) => {
+                      const fixture = fixtures.find((f) => f.name === name);
+                      const label =
+                        name === GENERATED_EXAMPLE_KEY ? "Full (generated)" : name === PRIMARY_EXAMPLE_KEY ? "Primary" : name;
+                      return (
+                        <option key={name} value={name}>
+                          {fixture && !fixture.valid ? `⚠ ${label}` : label}
+                        </option>
+                      );
+                    })}
                   </select>
                 </label>
+                {fixtures.length > 0 && (
+                  <button className="repair-button" onClick={handleRepairFixtures} disabled={repairing}>
+                    {repairing ? "Syncing..." : "Sync fixtures with schema"}
+                  </button>
+                )}
               </div>
+              {repairSummary && <p className="muted">{repairSummary}</p>}
+              {selectedFixture && !selectedFixture.valid && (
+                <div className="panel error">
+                  This fixture is stale — it no longer validates against the current schema
+                  {selectedFixture.errorSummary && <>: {selectedFixture.errorSummary}</>}. Nothing updates fixtures
+                  automatically when the schema (or a component/base it depends on) changes. Click "Sync fixtures
+                  with schema" to fill in missing required fields automatically (other kinds of mismatches need a
+                  manual fix).
+                </div>
+              )}
               {exampleError && <div className="panel error">{exampleError}</div>}
               {exampleLoading ? (
                 <div className="panel">Loading example...</div>

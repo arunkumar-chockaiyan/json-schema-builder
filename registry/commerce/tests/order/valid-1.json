@@ -3,12 +3,22 @@
   "createdAt": "2026-09-19T12:00:00Z",
   "tenantId": "tenant-001",
   "region": "us-east",
-  "details": {},
+  "details": {
+    "order": {
+      "number": 0,
+      "amount": 0
+    }
+  },
   "amount": 129.99,
   "currency": "USD",
   "type": "standard",
   "paymentMethod": "card",
   "cardNumber": "4111111111111111",
+  "shippingInfo": {
+    "method": "standard",
+    "description": "example",
+    "instructions": "example"
+  },
   "contact": {
     "name": "Jane Doe",
     "email": "jane@example.com",
@@ -16,7 +26,9 @@
       "line1": "123 Main St",
       "city": "Springfield",
       "postalCode": "62704",
-      "country": "US"
+      "country": "US",
+      "unit": "example"
     }
-  }
+  },
+  "expressFee": 0
 }

@@ -9,6 +9,16 @@ interface Props {
   renderEditor?: (rule: Rule) => ReactNode;
 }
 
+const MAX_CONSTRAIN_LABEL_LENGTH = 24;
+
+// Joins constrain values for display, truncating with an ellipsis once the
+// joined text passes a sensible length rather than letting one rule's badge
+// blow out the whole row.
+function formatConstrainValues(values: unknown[]): string {
+  const joined = values.map(String).join(", ");
+  return joined.length > MAX_CONSTRAIN_LABEL_LENGTH ? `${joined.slice(0, MAX_CONSTRAIN_LABEL_LENGTH)}…` : joined;
+}
+
 // Lightweight, dependency-free visualization scoped only to rule
 // participants (not the whole schema tree) — one flow row per rule:
 // WHEN field --operator:value--> THEN fields. Plain HTML/CSS, no canvas or
@@ -26,10 +36,8 @@ export function RuleGraph({ rules, onEdit, onDelete, editingId, renderEditor }: 
   return (
     <div className="rule-graph">
       {rules.map((rule) => {
-        const requiredTargets = [
-          ...(rule.then.require ?? []),
-          ...(rule.then.constrain ? [rule.then.constrain.field] : []),
-        ];
+        const requiredTargets = rule.then.require ?? [];
+        const constrain = rule.then.constrain;
         const forbiddenTargets = rule.then.forbid ?? [];
         const valueLabel = Array.isArray(rule.when.value)
           ? rule.when.value.join(", ")
@@ -47,7 +55,7 @@ export function RuleGraph({ rules, onEdit, onDelete, editingId, renderEditor }: 
                 {valueLabel && <> "{valueLabel}"</>} →
               </span>
               <div className="graph-node-group">
-                {requiredTargets.length === 0 && forbiddenTargets.length === 0 ? (
+                {requiredTargets.length === 0 && forbiddenTargets.length === 0 && !constrain ? (
                   <span className="muted">(no effect set)</span>
                 ) : (
                   <>
@@ -56,6 +64,15 @@ export function RuleGraph({ rules, onEdit, onDelete, editingId, renderEditor }: 
                         {t}
                       </span>
                     ))}
+                    {constrain && (
+                      <span
+                        className="graph-node graph-node-then"
+                        key={`constrain-${constrain.field}`}
+                        title={constrain.enum.map(String).join(", ")}
+                      >
+                        {constrain.field} [{formatConstrainValues(constrain.enum)}]
+                      </span>
+                    )}
                     {forbiddenTargets.map((t) => (
                       <span className="graph-node graph-node-forbid" key={`forbid-${t}`}>
                         ⛔ {t}

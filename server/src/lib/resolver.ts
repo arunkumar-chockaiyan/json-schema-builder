@@ -11,6 +11,7 @@
 import { readBase, readComponent } from "./registryFs.js";
 import { RegistryError } from "../types.js";
 import { compileRules, validateRules, type Rule } from "./rules.js";
+import { isOpenExtensionPoint } from "./example.js";
 
 const COMPONENT_REF_PATTERN = /^components\/([^/]+)\.schema\.json$/;
 
@@ -23,17 +24,35 @@ export async function resolveSchema(family: string, schemaTitle: string, raw: un
   const baseProps = getProperties(base);
   const schemaProps = getProperties(resolvedRaw);
 
-  for (const key of Object.keys(schemaProps)) {
+  // Base fields are locked — a schema can't redeclare one — *unless* the
+  // base field is an "open extension point" (e.g. "details": a generic,
+  // schema-varying object with no declared shape of its own). In that case
+  // the schema's derived sub-shape is merged into base's generic definition
+  // for THIS schema's resolved output only; base itself and every other
+  // schema are untouched.
+  const mergedProperties: Record<string, unknown> = { ...baseProps };
+  for (const [key, schemaProp] of Object.entries(schemaProps)) {
     if (key in baseProps) {
-      throw new RegistryError(
-        `Schema "${schemaTitle}" redeclares locked base field "${key}". Base fields cannot be overridden.`,
-        409,
-      );
+      const baseProp = baseProps[key] as Record<string, unknown>;
+      if (!isOpenExtensionPoint(baseProp)) {
+        throw new RegistryError(
+          `Schema "${schemaTitle}" redeclares locked base field "${key}". Base fields cannot be overridden.`,
+          409,
+        );
+      }
+      const schemaPropObj = schemaProp as Record<string, unknown>;
+      mergedProperties[key] = {
+        ...baseProp,
+        properties: schemaPropObj.properties ?? {},
+        required: schemaPropObj.required ?? [],
+      };
+    } else {
+      mergedProperties[key] = schemaProp;
     }
   }
 
   const merged = { ...(resolvedRaw as Record<string, unknown>) };
-  merged.properties = { ...baseProps, ...schemaProps };
+  merged.properties = mergedProperties;
   const baseRequired = Array.isArray((base as Record<string, unknown>)?.required)
     ? ((base as Record<string, unknown>).required as string[])
     : [];
@@ -41,6 +60,32 @@ export async function resolveSchema(family: string, schemaTitle: string, raw: un
     ? ((resolvedRaw as Record<string, unknown>).required as string[])
     : [];
   merged.required = [...new Set([...baseRequired, ...schemaRequired])];
+
+  // Explicit "required fields" list (x-required-fields, dot-paths) — a
+  // second, independent way to mark a field required, edited via the
+  // Constraints tab's picker rather than the example's `required` comment
+  // directive. Applied here (resolve time, not baked into properties at
+  // write time) so toggling it never needs a re-derivation, same reasoning
+  // as x-rules being compiled fresh on every resolve rather than stored
+  // pre-compiled. Authoring-only — stripped from what validators/consumers
+  // see, same as x-rules/x-example-source below.
+  const explicitRequiredFields = Array.isArray((merged as Record<string, unknown>)["x-required-fields"])
+    ? ((merged as Record<string, unknown>)["x-required-fields"] as string[])
+    : [];
+  delete merged["x-required-fields"];
+
+  if (explicitRequiredFields.length > 0) {
+    const availableFields = flattenFieldPaths(merged.properties as Record<string, unknown>);
+    for (const field of explicitRequiredFields) {
+      if (!availableFields.has(field)) {
+        throw new RegistryError(
+          `Required-fields list references unknown field "${field}". Fields must already be declared on the schema.`,
+          400,
+        );
+      }
+    }
+    applyRequiredPaths(merged, explicitRequiredFields);
+  }
 
   // Conditional rules: validate against the fully merged field set, compile
   // to standard allOf/if/then for the resolved output, and strip the
@@ -55,7 +100,7 @@ export async function resolveSchema(family: string, schemaTitle: string, raw: un
   delete merged["x-example-source"];
 
   if (rules.length > 0) {
-    const availableFields = new Set(Object.keys(merged.properties as Record<string, unknown>));
+    const availableFields = flattenFieldPaths(merged.properties as Record<string, unknown>);
     validateRules(rules, availableFields);
     const compiled = compileRules(rules);
     const existingAllOf = Array.isArray(merged.allOf) ? (merged.allOf as unknown[]) : [];
@@ -72,6 +117,52 @@ export async function resolveComponent(family: string, raw: unknown): Promise<un
 function getProperties(schema: unknown): Record<string, unknown> {
   const props = (schema as Record<string, unknown> | undefined)?.properties;
   return props && typeof props === "object" ? (props as Record<string, unknown>) : {};
+}
+
+// Recursively walks a resolved property tree, collecting every valid
+// dot-path — both leaves and intermediate objects — for rule-field
+// validation. Only descends into declared `properties` of `type: "object"`
+// nodes (arrays/items are out of scope for nested rule targeting for now),
+// so a bogus path like "amount.sub" is naturally excluded (amount isn't an
+// object, so nothing under it is ever added).
+function flattenFieldPaths(properties: Record<string, unknown>, prefix = ""): Set<string> {
+  const paths = new Set<string>();
+  for (const [key, value] of Object.entries(properties)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    paths.add(path);
+    const schema = value as Record<string, unknown>;
+    if (schema?.type === "object" && schema.properties && typeof schema.properties === "object") {
+      for (const nested of flattenFieldPaths(schema.properties as Record<string, unknown>, path)) {
+        paths.add(nested);
+      }
+    }
+  }
+  return paths;
+}
+
+// For each dot-path in `paths`, walks the already-merged/resolved tree
+// (base merge, $ref dereference, and open-extension-point merge all already
+// applied by the time this runs) and pushes the final segment into its
+// *containing* level's `required` array, creating the array if missing and
+// deduping. Mutates `merged` and its nested property nodes in place.
+function applyRequiredPaths(merged: Record<string, unknown>, paths: string[]): void {
+  for (const path of paths) {
+    const segments = path.split(".");
+    let cursor: Record<string, unknown> = merged;
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i];
+      const isLast = i === segments.length - 1;
+      if (isLast) {
+        const existing = Array.isArray(cursor.required) ? (cursor.required as string[]) : [];
+        if (!existing.includes(segment)) {
+          cursor.required = [...existing, segment];
+        }
+      } else {
+        const props = (cursor.properties as Record<string, unknown>) ?? {};
+        cursor = props[segment] as Record<string, unknown>;
+      }
+    }
+  }
 }
 
 // Recursively walks a JSON value, replacing any { "$ref": "components/x.schema.json" }

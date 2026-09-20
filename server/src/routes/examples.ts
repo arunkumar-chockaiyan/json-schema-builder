@@ -1,17 +1,34 @@
 import type { FastifyInstance } from "fastify";
-import { listTestCases, readSchema, readTestCase } from "../lib/registryFs.js";
+import { listTestCases, readSchema, readTestCase, writeTestCase } from "../lib/registryFs.js";
 import { resolveSchema } from "../lib/resolver.js";
 import { generateFullExample } from "../lib/exampleGenerator.js";
 import { applyExampleConventions, stripComments } from "../lib/example.js";
+import { repairFixture, validateFixture } from "../lib/fixtureValidation.js";
 import { RegistryError } from "../types.js";
 
 export async function exampleRoutes(app: FastifyInstance): Promise<void> {
+  // Lists fixtures AND, for each, whether it's still valid against the
+  // schema's *current* resolved output — fixtures are static files, nothing
+  // updates them automatically when the schema (or a component/base it
+  // depends on) changes, so this is the only way staleness would surface.
   app.get<{ Params: { family: string; schema: string } }>(
     "/api/families/:family/schemas/:schema/examples",
     async (req) => {
       const { family, schema } = req.params;
       const names = await listTestCases(family, schema);
-      return { names };
+
+      const raw = await readSchema(family, schema);
+      const resolved = await resolveSchema(family, schema, raw);
+
+      const examples = await Promise.all(
+        names.map(async (name) => {
+          const instance = await readTestCase(family, schema, name);
+          const result = validateFixture(resolved, instance);
+          return { name, ...result };
+        }),
+      );
+
+      return { examples };
     },
   );
 
@@ -53,6 +70,46 @@ export async function exampleRoutes(app: FastifyInstance): Promise<void> {
       // valid instance against the derived schema rather than showing the
       // raw "card,check" as if it were one literal value.
       return applyExampleConventions(JSON.parse(json));
+    },
+  );
+
+  // Repairs every stale fixture for this schema in one go — the "after all
+  // the changes are done" button. Two kinds of drift are fixed automatically:
+  // missing-required-property validation errors, and any other
+  // schema-declared field (optional, at any depth) that's simply absent
+  // from the fixture — so a newly-added optional field shows up in examples
+  // too, not just ones that broke validity. Anything ajv flags that ISN'T a
+  // missing property (wrong type, enum, pattern...) is left for a human,
+  // since guessing a replacement could destroy a meaningful hand-authored
+  // value. Registered before the ":name" route below for the same
+  // static-vs-parametric reason as "_generated"/"_primary".
+  app.post<{ Params: { family: string; schema: string } }>(
+    "/api/families/:family/schemas/:schema/examples/repair",
+    async (req) => {
+      const { family, schema } = req.params;
+      const names = await listTestCases(family, schema);
+
+      const raw = await readSchema(family, schema);
+      const resolved = await resolveSchema(family, schema, raw);
+
+      const repaired = await Promise.all(
+        names.map(async (name) => {
+          const instance = await readTestCase(family, schema, name);
+          const result = repairFixture(resolved, instance);
+          if (result.repairedFields.length > 0 || result.addedOptionalFields.length > 0) {
+            await writeTestCase(family, schema, name, result.instance);
+          }
+          return {
+            name,
+            valid: result.valid,
+            repairedFields: result.repairedFields,
+            addedOptionalFields: result.addedOptionalFields,
+            remainingErrors: result.remainingErrors,
+          };
+        }),
+      );
+
+      return { repaired };
     },
   );
 

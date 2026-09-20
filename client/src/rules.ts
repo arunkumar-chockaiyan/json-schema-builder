@@ -52,25 +52,38 @@ export const OPERATOR_LABELS: Record<RuleOperator, string> = {
   maxLength: "max length",
 };
 
+function pathSegments(field: string): string[] {
+  return field.split(".");
+}
+
 export function compileRules(rules: Rule[]): Record<string, unknown>[] {
   const blocks: Record<string, unknown>[] = [];
 
   for (const rule of rules) {
     const condition = buildCondition(rule.when);
-    const then: Record<string, unknown> = {};
+    const fragments: Record<string, unknown>[] = [];
 
-    if (rule.then.require && rule.then.require.length > 0) {
-      then.required = rule.then.require;
+    for (const field of rule.then.require ?? []) {
+      const segments = pathSegments(field);
+      const last = segments[segments.length - 1];
+      fragments.push(nestAtParent(segments, { required: [last] }, true));
     }
+
     if (rule.then.constrain) {
-      then.properties = {
-        [rule.then.constrain.field]: { enum: rule.then.constrain.enum },
-      };
-    }
-    if (rule.then.forbid && rule.then.forbid.length > 0) {
-      then.not = { anyOf: rule.then.forbid.map((field) => ({ required: [field] })) };
+      const segments = pathSegments(rule.then.constrain.field);
+      fragments.push(nestPropertyValue(segments, { enum: rule.then.constrain.enum }));
     }
 
+    if (rule.then.forbid && rule.then.forbid.length > 0) {
+      const anyOf = rule.then.forbid.map((field) => {
+        const segments = pathSegments(field);
+        const last = segments[segments.length - 1];
+        return nestAtParent(segments, { required: [last] }, false);
+      });
+      fragments.push({ not: { anyOf } });
+    }
+
+    const then = mergeSchemaFragments(fragments);
     if (Object.keys(then).length > 0) {
       blocks.push({ if: condition, then });
     }
@@ -81,18 +94,57 @@ export function compileRules(rules: Rule[]): Record<string, unknown>[] {
 
 function buildCondition(when: Rule["when"]): Record<string, unknown> {
   const { field, operator, value } = when;
+  const segments = pathSegments(field);
+  const last = segments[segments.length - 1];
 
   if (operator === "present") {
-    return { required: [field] };
+    return nestAtParent(segments, { required: [last] }, true);
   }
   if (operator === "absent") {
-    return { not: { required: [field] } };
+    return nestAtParent(segments, { not: { required: [last] } }, false);
   }
 
-  return {
-    required: [field],
-    properties: { [field]: buildFieldConstraint(operator, value) },
-  };
+  return nestAtParent(segments, { required: [last], properties: { [last]: buildFieldConstraint(operator, value) } }, true);
+}
+
+// See server/src/lib/rules.ts for the full rationale — same logic, kept in
+// sync manually since it's small.
+function nestAtParent(path: string[], leafAtParentLevel: Record<string, unknown>, requireAncestors: boolean): Record<string, unknown> {
+  const ancestors = path.slice(0, -1);
+  return ancestors.reduceRight<Record<string, unknown>>(
+    (acc, segment) =>
+      requireAncestors ? { required: [segment], properties: { [segment]: acc } } : { properties: { [segment]: acc } },
+    leafAtParentLevel,
+  );
+}
+
+function nestPropertyValue(path: string[], valueSchema: Record<string, unknown>): Record<string, unknown> {
+  return path.reduceRight<Record<string, unknown>>((acc, segment) => ({ properties: { [segment]: acc } }), valueSchema);
+}
+
+function mergeSchemaFragments(fragments: Record<string, unknown>[]): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const fragment of fragments) {
+    for (const [key, value] of Object.entries(fragment)) {
+      if (key === "required" && Array.isArray(value)) {
+        const existing = Array.isArray(result.required) ? (result.required as string[]) : [];
+        result.required = [...new Set([...existing, ...(value as string[])])];
+      } else if (key === "properties" && value && typeof value === "object") {
+        const existingProps = (result.properties as Record<string, unknown>) ?? {};
+        const incoming = value as Record<string, unknown>;
+        const mergedProps: Record<string, unknown> = { ...existingProps };
+        for (const [propKey, propSchema] of Object.entries(incoming)) {
+          mergedProps[propKey] = existingProps[propKey]
+            ? mergeSchemaFragments([existingProps[propKey] as Record<string, unknown>, propSchema as Record<string, unknown>])
+            : propSchema;
+        }
+        result.properties = mergedProps;
+      } else {
+        result[key] = value;
+      }
+    }
+  }
+  return result;
 }
 
 function buildFieldConstraint(operator: RuleOperator, value: unknown): Record<string, unknown> {

@@ -15,7 +15,7 @@ export function generateFullExample(resolvedSchema: unknown): unknown {
   return result;
 }
 
-function generateValue(schema: Record<string, unknown>): unknown {
+export function generateValue(schema: Record<string, unknown>): unknown {
   if (Array.isArray(schema.enum) && schema.enum.length > 0) {
     return schema.enum[0];
   }
