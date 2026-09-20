@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { absoluteSchemaPath, readBase, readSchema, writeSchema } from "../lib/registryFs.js";
+import { absoluteSchemaPath, listComponents, readBase, readSchema, writeSchema } from "../lib/registryFs.js";
 import { resolveSchema } from "../lib/resolver.js";
 import { logForPath } from "../lib/git.js";
 import { MissingBaseFieldsError, parseAndDerive } from "../lib/example.js";
@@ -37,6 +37,16 @@ export async function schemaRoutes(app: FastifyInstance): Promise<void> {
 
       const body = content as Record<string, unknown>;
 
+      // Transient signal from the Component-links picker's "Unlink" action:
+      // field names (top-level only — nested fields never hit the
+      // preservation check below) that should NOT have their existing $ref
+      // preserved on this Apply, even though the comment directive that
+      // would normally justify preserving it is gone. Never persisted.
+      const unlinkComponents = Array.isArray(body["x-unlink-components"])
+        ? (body["x-unlink-components"] as unknown[]).filter((f): f is string => typeof f === "string")
+        : [];
+      delete body["x-unlink-components"];
+
       // If an annotated example was submitted, derive properties/required
       // from it — this is the primary authoring path for the left-hand
       // Input tab. Existing on-disk properties are consulted so a top-level
@@ -49,6 +59,9 @@ export async function schemaRoutes(app: FastifyInstance): Promise<void> {
           existingProperties = (onDisk.properties as Record<string, unknown>) ?? {};
         } catch {
           // New schema with no file yet — nothing to preserve.
+        }
+        for (const field of unlinkComponents) {
+          delete existingProperties[field];
         }
 
         const baseRaw = (await readBase(family)) as Record<string, unknown>;
@@ -72,6 +85,18 @@ export async function schemaRoutes(app: FastifyInstance): Promise<void> {
             400,
           );
         }
+        if (derived.componentRefs.size > 0) {
+          const existingComponents = new Set(await listComponents(family));
+          for (const [path, componentName] of derived.componentRefs) {
+            if (!existingComponents.has(componentName)) {
+              throw new RegistryError(
+                `Comment refers to unknown component "${componentName}" for field "${path}".`,
+                400,
+              );
+            }
+          }
+        }
+
         body.properties = derived.properties;
         body.required = derived.required;
       }

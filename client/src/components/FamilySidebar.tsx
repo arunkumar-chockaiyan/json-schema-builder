@@ -35,13 +35,17 @@ export function FamilySidebar({ family, selection, onSelect, onBack }: Props) {
       <div className="tree-section">
         <div className="tree-heading">Components ({family.components.length})</div>
         {family.components.map((name) => (
-          <button
-            key={name}
-            className={`tree-item ${isSelected({ kind: "component", name }) ? "selected" : ""}`}
-            onClick={() => onSelect({ kind: "component", name })}
-          >
-            🧩 {name}
-          </button>
+          <div className="tree-row" key={name}>
+            <button
+              className={`tree-item ${isSelected({ kind: "component", name }) ? "selected" : ""}`}
+              onClick={() => onSelect({ kind: "component", name })}
+            >
+              🧩 {name}
+            </button>
+            <button className="tree-remove-button" disabled title="Not implemented yet">
+              🗑
+            </button>
+          </div>
         ))}
         <button
           className={`tree-item new-item ${selection?.kind === "extractComponent" ? "selected" : ""}`}
@@ -54,13 +58,17 @@ export function FamilySidebar({ family, selection, onSelect, onBack }: Props) {
       <div className="tree-section">
         <div className="tree-heading">Schemas ({family.schemas.length})</div>
         {family.schemas.map((name) => (
-          <button
-            key={name}
-            className={`tree-item ${isSelected({ kind: "schema", name }) ? "selected" : ""}`}
-            onClick={() => onSelect({ kind: "schema", name })}
-          >
-            📄 {name}
-          </button>
+          <div className="tree-row" key={name}>
+            <button
+              className={`tree-item ${isSelected({ kind: "schema", name }) ? "selected" : ""}`}
+              onClick={() => onSelect({ kind: "schema", name })}
+            >
+              📄 {name}
+            </button>
+            <button className="tree-remove-button" disabled title="Not implemented yet">
+              🗑
+            </button>
+          </div>
         ))}
         <button
           className={`tree-item new-item ${selection?.kind === "newSchema" ? "selected" : ""}`}

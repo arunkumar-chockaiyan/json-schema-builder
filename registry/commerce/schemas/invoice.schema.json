@@ -2,8 +2,29 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "commerce.invoice",
   "type": "object",
-  "x-example-source": "{\n  \"id\": \"8f14e45f-ceea-467e-9575-8e18c1eae7a3\",\n  \"createdAt\": \"2026-09-19T12:00:00Z\",\n  \"tenantId\": \"tenant-001\",\n  \"region\": \"us-east\",\n  \"details\": {\n    \"invoice\":{\n      \"number\": 1234,\n      \"date\": \"09/19/2026\",\n      \"amount\" : 700\n    }\n  },  -- Order-specific extra data; shape is up to this schema.\n  \"amount\": 129.99,  -- Order total before tax, in the currency listed below\n  \"currency\": \"USD\",\n  \"type\": \"standard,express\",  -- Shipping speed for this order.\n  \"paymentMethod\": \"card,check\",  -- How this order was paid for.\n  \"shippingInfo\": {\n    \"method\": \"standard\"\n  },\n  \"contact\": {\n    \"name\": \"Jane Doe\",\n    \"email\": \"jane@example.com\"\n  }\n}",
+  "x-example-source": "{\n  \"id\": \"8f14e45f-ceea-467e-9575-8e18c1eae7a3\",\n  \"createdAt\": \"2026-09-19T12:00:00Z\",\n  \"tenantId\": \"tenant-001\",\n  \"region\": \"us-east\",\n  \"details\": {\n    \"invoice\":{\n      \"number\": 1234,\n      \"date\": \"09/19/2026\",\n      \"amount\" : 700\n    }\n  },  -- Order-specific extra data; shape is up to this schema.\n  \"amount\": 129.99,  -- Order total before tax, in the currency listed below\n  \"currency\": \"USD\",\n  \"type\": \"standard,express\",  -- Shipping speed for this order.\n  \"paymentMethod\": \"card,check\",  -- How this order was paid for.\n  \"shippingInfo\": {\n    \"method\": \"standard\"\n  },\n  \"contact\": {  -- component: contact\n    \"name\": \"Jane Doe\",\n    \"email\": \"jane@example.com\"\n  }\n}",
   "properties": {
+    "details": {
+      "type": "object",
+      "properties": {
+        "invoice": {
+          "type": "object",
+          "properties": {
+            "number": {
+              "type": "number"
+            },
+            "date": {
+              "type": "string"
+            },
+            "amount": {
+              "type": "number"
+            }
+          },
+          "required": []
+        }
+      },
+      "required": []
+    },
     "amount": {
       "type": "number",
       "description": "Order total before tax, in the currency listed below"
@@ -34,34 +55,13 @@
           "type": "string"
         }
       },
-      "required": [
-        "method"
-      ]
+      "required": []
     },
     "contact": {
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "email": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "name",
-        "email"
-      ]
+      "$ref": "components/contact.schema.json"
     }
   },
-  "required": [
-    "amount",
-    "currency",
-    "type",
-    "paymentMethod",
-    "shippingInfo",
-    "contact"
-  ],
+  "required": [],
   "x-rules": [
     {
       "id": "57c35eb1-1d52-4042-b2a7-0190f7c20c4a",
@@ -77,6 +77,28 @@
         "forbid": [
           "paymentMethod"
         ]
+      }
+    },
+    {
+      "id": "2b817a37-f638-404b-a218-ca87a61d8b7d",
+      "when": {
+        "field": "region",
+        "operator": "equals",
+        "value": "us"
+      },
+      "then": {
+        "require": [
+          "paymentMethod"
+        ],
+        "forbid": [
+          "shippingInfo.method"
+        ],
+        "constrain": {
+          "field": "currency",
+          "enum": [
+            "usd"
+          ]
+        }
       }
     }
   ]

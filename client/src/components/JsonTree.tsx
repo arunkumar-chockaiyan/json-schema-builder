@@ -12,10 +12,16 @@ export interface TreeNode {
   children?: TreeNode[];
 }
 
+const COMPONENT_REF_PATTERN = /^components\/(.+)\.schema\.json$/;
+
 // Walks a *resolved* schema's `properties` (base merged in, $refs already
 // dereferenced) into a tree for browsing/picking. Arrays render a single
 // summarizing "items" child rather than per-index, matching how the schema
-// itself describes them.
+// itself describes them. Also usable on a schema's own *raw* (un-dereferenced)
+// properties (e.g. for the component-link picker) — a bare `$ref` node, which
+// never appears in a resolved tree but can in a raw one, renders as a leaf
+// annotated with the component it points to rather than falling through
+// blank.
 export function buildSchemaTree(properties: Record<string, unknown> | undefined, depth = 0, pathPrefix = ""): TreeNode[] {
   if (!properties) return [];
   return Object.entries(properties).map(([key, raw]) => {
@@ -24,6 +30,11 @@ export function buildSchemaTree(properties: Record<string, unknown> | undefined,
     const type = typeof schema.type === "string" ? schema.type : undefined;
     const description = typeof schema.description === "string" ? schema.description : undefined;
     const enumValues = Array.isArray(schema.enum) ? schema.enum : undefined;
+
+    if (typeof schema.$ref === "string") {
+      const match = COMPONENT_REF_PATTERN.exec(schema.$ref);
+      return { key, path, kind: "leaf", depth, type: match ? `→ ${match[1]}` : "$ref", description } satisfies TreeNode;
+    }
 
     if (type === "object" && schema.properties && typeof schema.properties === "object") {
       return {

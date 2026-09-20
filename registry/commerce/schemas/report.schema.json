@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "commerce.report",
+  "type": "object",
+  "x-example-source": "{\n  \"id\": \"8f14e45f-ceea-467e-9575-8e18c1eae7a3\",\n  \"createdAt\": \"2026-09-19T12:00:00Z\",\n  \"tenantId\": \"tenant-001\",\n  \"region\": \"us-east\",\n  \"details\": {\n    \"order\": {\n      \"number\": 1234,\n      \"amount\": 75\n    }\n  },\n  \"amount\": 129.99,  -- required; Order total before tax, in the currency listed below\n  \"currency\": \"USD\",  -- required\n  \"type\": \"standard,express\",  -- required; Shipping speed for this order.\n  \"paymentMethod\": \"card,check\",  -- required; How this order was paid for.\n  \"expressFee\": 15,  -- Surcharge applied to express orders (only required for express orders — see Rules).\n  \"cardNumber\": \"4111111111111111\",  -- Card number, only applicable for card payments (see Rules).\n  -- required\n  \"shippingInfo\": { -- component: shippingInfo\n    \"method\": \"standard\"\n  },\n  -- required; component: contact\n  \"contact\": {\n    \"name\": \"Jane Doe\",\n    \"email\": \"jane@example.com\"\n  }\n}",
+  "properties": {
+    "details": {
+      "type": "object",
+      "properties": {
+        "order": {
+          "type": "object",
+          "properties": {
+            "number": {
+              "type": "number"
+            },
+            "amount": {
+              "type": "number"
+            }
+          },
+          "required": []
+        }
+      },
+      "required": []
+    },
+    "amount": {
+      "type": "number",
+      "description": "Order total before tax, in the currency listed below"
+    },
+    "currency": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "standard",
+        "express"
+      ],
+      "description": "Shipping speed for this order."
+    },
+    "paymentMethod": {
+      "type": "string",
+      "enum": [
+        "card",
+        "check"
+      ],
+      "description": "How this order was paid for."
+    },
+    "expressFee": {
+      "type": "number",
+      "description": "Surcharge applied to express orders (only required for express orders — see Rules)."
+    },
+    "cardNumber": {
+      "type": "string",
+      "description": "Card number, only applicable for card payments (see Rules)."
+    },
+    "shippingInfo": {
+      "$ref": "components/shippingInfo.schema.json"
+    },
+    "contact": {
+      "$ref": "components/contact.schema.json"
+    }
+  },
+  "required": [
+    "amount",
+    "currency",
+    "type",
+    "paymentMethod",
+    "contact"
+  ]
+}

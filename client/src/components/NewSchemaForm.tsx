@@ -94,18 +94,31 @@ export function NewSchemaForm({ family, onCreated, onCancel }: Props) {
           />
         </label>
 
-        <p className="muted split-hint">
-          Enter an example instance. Add <code>-- a comment</code> after (or above) a field to set its
-          description. Every field present becomes required. A comma-separated value like <code>"card,check"</code>{" "}
-          becomes an enum of those values (the first is used as this example's value). Rules and component links
-          can be refined after creation.
-          {baseRequiredFields.length > 0 && (
-            <>
-              {" "}
-              Must include the base's minimum fields: <code>{baseRequiredFields.join(", ")}</code>.
-            </>
-          )}
-        </p>
+        <div className="muted split-hint">
+          <p>Type an example for this schema.</p>
+          <ul>
+            <li>
+              To add a description to a field, type <code>-- text</code> after it.
+            </li>
+            <li>Fields are optional by default.</li>
+            <li>
+              To make a field required, type <code>-- required</code>.
+            </li>
+            <li>
+              To add a description too, type <code>-- required; text</code>.
+            </li>
+            <li>
+              To create an enum, type values separated by commas, for example <code>"card,check"</code>. The first
+              value becomes the example value.
+            </li>
+            <li>You can add rules and component links after you create the schema.</li>
+            {baseRequiredFields.length > 0 && (
+              <li>
+                This schema must include these base fields: <code>{baseRequiredFields.join(", ")}</code>.
+              </li>
+            )}
+          </ul>
+        </div>
 
         {error && <div className="panel error">{error}</div>}
 

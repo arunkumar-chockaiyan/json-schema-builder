@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import type { Selection } from "../App";
 import { RuleBuilder, FieldMultiPicker, type FieldInfo } from "./RuleBuilder";
 import { JsonTree, buildExampleTree, buildSchemaTree } from "./JsonTree";
+import { ComponentLinkPicker } from "./ComponentLinkPicker";
 import type { Rule } from "../rules";
 
 interface Props {
@@ -32,6 +33,196 @@ function safeParse(json: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+// Walks the schema's own raw properties/required tree (not resolved — a
+// $ref node has no properties/required of its own to recurse into, which
+// correctly excludes a component's own required fields; those are the
+// component's business, not this schema's `-- required` comments) and
+// collects every dot-path made required via the example's `-- required`
+// comment directive, at any depth.
+function collectCommentRequiredPaths(node: Record<string, unknown> | null | undefined, prefix = ""): string[] {
+  if (!node) return [];
+  const required = Array.isArray(node.required) ? (node.required as string[]) : [];
+  const properties = (node.properties as Record<string, unknown>) ?? {};
+  const paths = required.map((key) => (prefix ? `${prefix}.${key}` : key));
+  for (const [key, child] of Object.entries(properties)) {
+    const childPath = prefix ? `${prefix}.${key}` : key;
+    paths.push(...collectCommentRequiredPaths(child as Record<string, unknown>, childPath));
+  }
+  return paths;
+}
+
+// Splits a line into JSON code + trailing "-- comment", mirroring the
+// server's parser (server/src/lib/example.ts's splitTrailingComment)
+// closely enough for editing — string-literal aware so a "--" inside a
+// value isn't mistaken for a comment start.
+function splitTrailingComment(line: string): { code: string; comment: string | null } {
+  let inString = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"' && line[i - 1] !== "\\") {
+      inString = !inString;
+      continue;
+    }
+    if (!inString && ch === "-" && line[i + 1] === "-") {
+      return { code: line.slice(0, i), comment: line.slice(i + 2).trim() };
+    }
+  }
+  return { code: line, comment: null };
+}
+
+function stripRequiredDirective(commentText: string | undefined): string | undefined {
+  if (!commentText) return undefined;
+  const parts = commentText
+    .split(";")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0 && s.toLowerCase() !== "required");
+  return parts.length > 0 ? parts.join("; ") : undefined;
+}
+
+const COMPONENT_FRAGMENT = /^component:\s*/i;
+
+function stripComponentDirective(commentText: string | undefined): string | undefined {
+  if (!commentText) return undefined;
+  const parts = commentText
+    .split(";")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0 && !COMPONENT_FRAGMENT.test(s));
+  return parts.length > 0 ? parts.join("; ") : undefined;
+}
+
+function mergeComponentDirective(commentText: string | undefined, componentName: string): string {
+  const parts = (commentText ?? "")
+    .split(";")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0 && !COMPONENT_FRAGMENT.test(s));
+  parts.push(`component: ${componentName}`);
+  return parts.join("; ");
+}
+
+// Locates the comment governing `targetPath` in the annotated example —
+// either a trailing comment on the field's own line, or a standalone
+// comment line immediately above it (the two forms
+// server/src/lib/example.ts's stripComments recognizes) — and rewrites it
+// via `transform`: given the comment's current text (undefined if there
+// isn't one), return the new text, or undefined to remove the comment
+// entirely. If there's no comment yet and `transform` returns text, it's
+// added as a fresh trailing comment on the key's own line (works even for a
+// multi-line object value — a trailing comment on the opening-brace line
+// doesn't affect nesting tracking below).
+function editFieldComment(
+  source: string,
+  targetPath: string,
+  transform: (existing: string | undefined) => string | undefined,
+): string {
+  const lines = source.split("\n");
+  const pathStack: string[] = [];
+  const KEY_LINE = /^\s*"([^"]+)"\s*:\s*(.*?)\s*,?\s*$/;
+  const outLines: (string | null)[] = [];
+  let pendingCommentIndex: number | null = null;
+
+  for (const line of lines) {
+    const { code, comment } = splitTrailingComment(line);
+    const trimmedCode = code.trim();
+
+    if (trimmedCode.length === 0) {
+      outLines.push(line);
+      pendingCommentIndex = comment ? outLines.length - 1 : null;
+      continue;
+    }
+
+    const match = KEY_LINE.exec(trimmedCode);
+    if (match) {
+      const key = match[1];
+      const valueStart = match[2];
+      const path = [...pathStack, key].join(".");
+
+      if (path === targetPath) {
+        if (comment) {
+          const newComment = transform(comment);
+          outLines.push(newComment ? `${code}-- ${newComment}` : code.replace(/\s+$/, ""));
+        } else if (pendingCommentIndex !== null) {
+          const prevLine = outLines[pendingCommentIndex] as string;
+          const { code: prevCode, comment: prevComment } = splitTrailingComment(prevLine);
+          const newComment = transform(prevComment ?? undefined);
+          outLines[pendingCommentIndex] = newComment ? `${prevCode}-- ${newComment}` : null;
+          outLines.push(line);
+        } else {
+          const newComment = transform(undefined);
+          outLines.push(newComment ? `${code.replace(/\s+$/, "")}  -- ${newComment}` : line);
+        }
+      } else {
+        outLines.push(line);
+      }
+
+      pendingCommentIndex = null;
+      if (valueStart.startsWith("{") && !valueStart.includes("}")) {
+        pathStack.push(key);
+      }
+    } else {
+      outLines.push(line);
+      pendingCommentIndex = null;
+    }
+
+    if (trimmedCode === "}" || trimmedCode === "},") {
+      pathStack.pop();
+    }
+  }
+
+  return outLines.filter((l): l is string => l !== null).join("\n");
+}
+
+// Removes the `required` directive from whichever comment currently marks
+// `targetPath` as required. Keeps any description text the comment also
+// carried; leaves everything else untouched. Used so removing a field from
+// the Required fields picker actually sticks, instead of the comment
+// silently re-adding it on the next Apply.
+function removeRequiredDirective(source: string, targetPath: string): string {
+  return editFieldComment(source, targetPath, stripRequiredDirective);
+}
+
+// Adds or replaces the `component: <name>` directive on `targetPath`'s
+// comment — used to link (or reassign) a field to a component from the
+// Component links picker without hand-typing the directive.
+function setComponentDirective(source: string, targetPath: string, componentName: string): string {
+  return editFieldComment(source, targetPath, (existing) => mergeComponentDirective(existing, componentName));
+}
+
+// Removes the `component: <name>` directive from `targetPath`'s comment.
+// For a TOP-LEVEL path this alone does not make the field's schema revert
+// to an inferred inline shape — deriveProperties (server/src/lib/example.ts)
+// preserves an existing on-disk $ref regardless of the comment, since that's
+// the only signal an Extract-Component-created ref has. The caller also
+// needs to fold the path into `x-unlink-components` for the next save (see
+// handleUnlinkComponent) so the server knows to stop preserving it. Nested
+// paths don't need that extra step — the preservation check is top-level
+// only.
+function removeComponentDirective(source: string, targetPath: string): string {
+  return editFieldComment(source, targetPath, stripComponentDirective);
+}
+
+const COMPONENT_REF_PATTERN = /^components\/(.+)\.schema\.json$/;
+
+// Walks the schema's own raw properties tree (never resolved — mirrors
+// collectCommentRequiredPaths) and records every field whose schema is
+// currently a bare $ref, without recursing into it (its internals belong to
+// the linked component's own file, not this schema).
+function collectComponentLinks(node: Record<string, unknown> | null | undefined, prefix = ""): Map<string, string> {
+  const links = new Map<string, string>();
+  if (!node) return links;
+  const properties = (node.properties as Record<string, unknown>) ?? {};
+  for (const [key, child] of Object.entries(properties)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    const childSchema = (child ?? {}) as Record<string, unknown>;
+    if (typeof childSchema.$ref === "string") {
+      const match = COMPONENT_REF_PATTERN.exec(childSchema.$ref);
+      if (match) links.set(path, match[1]);
+      continue;
+    }
+    for (const [k, v] of collectComponentLinks(childSchema, path)) links.set(k, v);
+  }
+  return links;
 }
 
 function extractFields(resolvedObj: Record<string, unknown> | null): FieldInfo[] {
@@ -71,6 +262,11 @@ export function SchemaEditor({ family, selection }: Props) {
   const [repairing, setRepairing] = useState(false);
   const [repairSummary, setRepairSummary] = useState<string | null>(null);
   const [baseRequiredFields, setBaseRequiredFields] = useState<string[]>([]);
+  const [availableComponents, setAvailableComponents] = useState<string[]>([]);
+  // Comment-required fields whose "-- required" directive was just stripped
+  // client-side, hidden optimistically until Save/Apply persists it and a
+  // reload recomputes commentRequiredFields for real.
+  const [pendingCommentRemovals, setPendingCommentRemovals] = useState<Set<string>>(new Set());
   const [exampleSelection, setExampleSelection] = useState<string>(GENERATED_EXAMPLE_KEY);
   const [exampleData, setExampleData] = useState<unknown>(undefined);
   const [exampleLoading, setExampleLoading] = useState(false);
@@ -106,6 +302,7 @@ export function SchemaEditor({ family, selection }: Props) {
     setRightTab("source");
     setBaseEditingEnabled(false);
     setExampleSelection(GENERATED_EXAMPLE_KEY);
+    setPendingCommentRemovals(new Set());
 
     loadSchemaData()
       .catch((err) => setError(err.message))
@@ -143,6 +340,19 @@ export function SchemaEditor({ family, selection }: Props) {
         setBaseRequiredFields(Array.isArray(req) ? (req as string[]) : []);
       })
       .catch(() => setBaseRequiredFields([]));
+  }, [family, selection]);
+
+  // Family's existing components — shown as a hint on the Input tab so it's
+  // clear what names `-- component: <name>` can point at.
+  useEffect(() => {
+    if (selection.kind !== "schema") {
+      setAvailableComponents([]);
+      return;
+    }
+    api
+      .getFamily(family)
+      .then((detail) => setAvailableComponents(detail.components))
+      .catch(() => setAvailableComponents([]));
   }, [family, selection]);
 
   // Fixture (saved test case) list, with each one's validity against the
@@ -227,6 +437,15 @@ export function SchemaEditor({ family, selection }: Props) {
     () => buildSchemaTree(resolvedObj?.properties as Record<string, unknown> | undefined),
     [resolvedObj],
   );
+  // Own-fields tree for the Component links picker — built from this
+  // schema's raw (un-dereferenced) properties, not resolved, so a linked
+  // field's internals (which belong to the component's own file) aren't
+  // offered as re-linkable targets.
+  const ownFieldTreeNodes = useMemo(
+    () => buildSchemaTree(rawObj?.properties as Record<string, unknown> | undefined),
+    [rawObj],
+  );
+  const componentLinks = useMemo(() => collectComponentLinks(rawObj), [rawObj]);
   const rules = useMemo(
     () => (Array.isArray(rawObj?.["x-rules"]) ? (rawObj!["x-rules"] as Rule[]) : []),
     [rawObj],
@@ -234,6 +453,20 @@ export function SchemaEditor({ family, selection }: Props) {
   const requiredFields = useMemo(
     () => (Array.isArray(rawObj?.["x-required-fields"]) ? (rawObj!["x-required-fields"] as string[]) : []),
     [rawObj],
+  );
+  // Fields required via the example's `-- required` comment directive —
+  // filtered by pendingCommentRemovals so a just-edited field disappears
+  // immediately instead of waiting for a Save/reload round-trip.
+  const commentRequiredFields = useMemo(
+    () => collectCommentRequiredPaths(rawObj).filter((f) => !pendingCommentRemovals.has(f)),
+    [rawObj, pendingCommentRemovals],
+  );
+  // The Required fields picker shows one merged, fully-removable list —
+  // fields required via the explicit x-required-fields list, and fields
+  // required via the example's comment directive, treated the same way.
+  const allRequiredFields = useMemo(
+    () => Array.from(new Set([...requiredFields, ...commentRequiredFields])),
+    [requiredFields, commentRequiredFields],
   );
 
   // Seed the Input tab's text whenever `raw` (re)loads — from the schema's
@@ -250,9 +483,66 @@ export function SchemaEditor({ family, selection }: Props) {
     setRaw(JSON.stringify(nextRaw, null, 2));
   };
 
+  // The picker shows one merged list (explicit x-required-fields + comment-
+  // required), so a single toggle click can mean different things: adding a
+  // brand-new field always goes into x-required-fields; removing a field
+  // that came from the example's `-- required` comment edits that comment
+  // directly (via removeRequiredDirective) so the removal actually sticks,
+  // rather than silently reappearing on the next Apply.
   const handleRequiredFieldsChange = (nextRequired: string[]) => {
     if (!rawObj) return;
-    const nextRaw = { ...rawObj, "x-required-fields": nextRequired };
+    const removed = allRequiredFields.filter((f) => !nextRequired.includes(f));
+    const added = nextRequired.filter((f) => !allRequiredFields.includes(f));
+
+    let nextInputText = inputText;
+    const newPending = new Set(pendingCommentRemovals);
+    for (const field of removed) {
+      if (commentRequiredFields.includes(field) && !requiredFields.includes(field)) {
+        nextInputText = removeRequiredDirective(nextInputText, field);
+        newPending.add(field);
+      }
+    }
+
+    const nextExplicit = [...requiredFields.filter((f) => !removed.includes(f)), ...added];
+    const nextRaw: Record<string, unknown> = { ...rawObj, "x-required-fields": nextExplicit };
+
+    if (nextInputText !== inputText) {
+      nextRaw["x-example-source"] = nextInputText;
+      setInputText(nextInputText);
+      setPendingCommentRemovals(newPending);
+    }
+
+    setRaw(JSON.stringify(nextRaw, null, 2));
+  };
+
+  // Links (or reassigns) `path` to `componentName` — writes/replaces the
+  // `component: <name>` directive on that field's comment. No unlink signal
+  // needed even when reassigning: a fresh directive always takes priority
+  // over whatever the on-disk $ref currently is (see server/src/lib/
+  // example.ts's deriveProperties — componentRefs is checked before the
+  // preserve-existing-$ref fallback).
+  const handleLinkComponent = (path: string, componentName: string) => {
+    if (!rawObj) return;
+    const nextInputText = setComponentDirective(inputText, path, componentName);
+    const nextRaw: Record<string, unknown> = { ...rawObj, "x-example-source": nextInputText };
+    setInputText(nextInputText);
+    setRaw(JSON.stringify(nextRaw, null, 2));
+  };
+
+  // Unlinks `path` — removes the directive comment and, for a top-level
+  // path only, also queues it in x-unlink-components so the next Apply
+  // doesn't preserve the still-on-disk $ref (see removeComponentDirective).
+  const handleUnlinkComponent = (path: string) => {
+    if (!rawObj) return;
+    const nextInputText = removeComponentDirective(inputText, path);
+    const nextRaw: Record<string, unknown> = { ...rawObj, "x-example-source": nextInputText };
+    if (!path.includes(".")) {
+      const existingUnlink = Array.isArray(rawObj["x-unlink-components"])
+        ? (rawObj["x-unlink-components"] as string[])
+        : [];
+      nextRaw["x-unlink-components"] = Array.from(new Set([...existingUnlink, path]));
+    }
+    setInputText(nextInputText);
     setRaw(JSON.stringify(nextRaw, null, 2));
   };
 
@@ -268,6 +558,7 @@ export function SchemaEditor({ family, selection }: Props) {
         await api.saveSchema(family, selection.name, nextContent);
       }
       await loadSchemaData();
+      setPendingCommentRemovals(new Set());
       setSaveState("saved");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -388,10 +679,14 @@ export function SchemaEditor({ family, selection }: Props) {
     <div className="editor-pane">
       <div className="editor-toolbar">
         <h3>{title}</h3>
+        <button className="repair-button" onClick={handleRepairFixtures} disabled={repairing}>
+          {repairing ? "Refreshing..." : "Refresh Examples"}
+        </button>
         <button className="save-button" onClick={handleTwoPaneSave} disabled={saveState === "saving"}>
           {saveState === "saving" ? "Saving..." : saveState === "saved" ? "Saved ✓" : leftTab === "input" ? "Apply" : "Save"}
         </button>
       </div>
+      {repairSummary && <p className="muted repair-summary">{repairSummary}</p>}
 
       <div className="editor-split">
         <div className="editor-split-left">
@@ -400,25 +695,43 @@ export function SchemaEditor({ family, selection }: Props) {
               Input
             </button>
             <button className={leftTab === "rules" ? "active" : ""} onClick={() => setLeftTab("rules")}>
-              Constraints {(rules.length > 0 || requiredFields.length > 0) && `(${rules.length + requiredFields.length})`}
+              Constraints{" "}
+              {(rules.length > 0 || requiredFields.length > 0 || componentLinks.size > 0) &&
+                `(${rules.length + requiredFields.length + componentLinks.size})`}
             </button>
           </div>
 
           {leftTab === "input" ? (
             <>
-              <p className="muted split-hint">
-                Enter an example instance. Add <code>-- a comment</code> after (or above) a field to set its
-                description. Fields are optional by default — add <code>-- required</code> (or{" "}
-                <code>-- required; description</code>) to make one required. A comma-separated value like{" "}
-                <code>"card,check"</code> becomes an enum of those values (the first is used as this example's
-                value).
-                {baseRequiredFields.length > 0 && (
-                  <>
-                    {" "}
-                    Must include the base's minimum fields: <code>{baseRequiredFields.join(", ")}</code>.
-                  </>
-                )}
-              </p>
+              <div className="muted split-hint">
+                <p>Type an example for this schema.</p>
+                <ul>
+                  <li>
+                    To add a description to a field, type <code>-- text</code> after it.
+                  </li>
+                  <li>Fields are optional by default.</li>
+                  <li>
+                    To make a field required, type <code>-- required</code>.
+                  </li>
+                  <li>
+                    To add a description too, type <code>-- required; text</code>.
+                  </li>
+                  <li>
+                    To create an enum, type values separated by commas, for example <code>"card,check"</code>. The
+                    first value becomes the example value.
+                  </li>
+                  <li>
+                    To link a field to an existing component instead of inferring its shape, type{" "}
+                    <code>-- component: &lt;name&gt;</code> (combine with required: <code>-- component: address; required</code>
+                    ).
+                  </li>
+                  {baseRequiredFields.length > 0 && (
+                    <li>
+                      This schema must include these base fields: <code>{baseRequiredFields.join(", ")}</code>.
+                    </li>
+                  )}
+                </ul>
+              </div>
               <Editor
                 height="60vh"
                 defaultLanguage="json"
@@ -430,20 +743,32 @@ export function SchemaEditor({ family, selection }: Props) {
           ) : (
             <div className="rules-tab">
               {fields.length === 0 ? (
-                <p className="muted">This schema has no properties yet — enter an example on the Input tab first.</p>
+                <p className="muted">This schema has no fields yet. Add an example on the Input tab first.</p>
               ) : (
                 <>
                   <h4>Required fields</h4>
                   <p className="muted">
-                    Fields are optional by default. Add fields here to require them unconditionally, independent of
-                    the <code>-- required</code> comment directive on the Input tab — useful for base-inherited or
-                    component-nested fields the example doesn't spell out directly.
+                    Fields are optional by default. Add a field here to make it always required. Remove a field to
+                    make it optional again. This also updates the <code>-- required</code> comment on the Input tab
+                    if the field came from there.
                   </p>
                   <FieldMultiPicker
                     treeNodes={schemaTreeNodes}
-                    values={requiredFields}
+                    values={allRequiredFields}
                     addLabel="+ require field"
                     onChange={handleRequiredFieldsChange}
+                  />
+                  <h4>Component links</h4>
+                  <p className="muted">
+                    Link a field to an existing component instead of typing{" "}
+                    <code>-- component: &lt;name&gt;</code> by hand.
+                  </p>
+                  <ComponentLinkPicker
+                    treeNodes={ownFieldTreeNodes}
+                    links={componentLinks}
+                    availableComponents={availableComponents}
+                    onLink={handleLinkComponent}
+                    onUnlink={handleUnlinkComponent}
                   />
                   <h4>Rules</h4>
                   <RuleBuilder rules={rules} fields={fields} treeNodes={schemaTreeNodes} onChange={handleRulesChange} />
@@ -488,20 +813,14 @@ export function SchemaEditor({ family, selection }: Props) {
                     })}
                   </select>
                 </label>
-                {fixtures.length > 0 && (
-                  <button className="repair-button" onClick={handleRepairFixtures} disabled={repairing}>
-                    {repairing ? "Syncing..." : "Sync fixtures with schema"}
-                  </button>
-                )}
               </div>
-              {repairSummary && <p className="muted">{repairSummary}</p>}
               {selectedFixture && !selectedFixture.valid && (
                 <div className="panel error">
                   This fixture is stale — it no longer validates against the current schema
                   {selectedFixture.errorSummary && <>: {selectedFixture.errorSummary}</>}. Nothing updates fixtures
-                  automatically when the schema (or a component/base it depends on) changes. Click "Sync fixtures
-                  with schema" to fill in missing required fields automatically (other kinds of mismatches need a
-                  manual fix).
+                  automatically when the schema (or a component/base it depends on) changes. Click "Refresh
+                  Examples" at the top to fill in missing required fields automatically (other kinds of mismatches
+                  need a manual fix).
                 </div>
               )}
               {exampleError && <div className="panel error">{exampleError}</div>}

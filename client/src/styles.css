@@ -111,6 +111,35 @@ body {
   background: #2c3345;
 }
 
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.tree-row .tree-item {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-remove-button {
+  background: none;
+  border: none;
+  color: #aab1c4;
+  cursor: not-allowed;
+  padding: 0.3rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.tree-remove-button:disabled {
+  opacity: 0.6;
+}
+
 .tree-item.selected {
   background: #3a4361;
   color: white;
@@ -434,6 +463,11 @@ body {
   cursor: default;
 }
 
+.repair-summary {
+  padding: 0.4rem 1rem 0;
+  font-size: 0.85rem;
+}
+
 /* Two-pane schema editor */
 
 .editor-split {
@@ -462,6 +496,18 @@ body {
 .split-hint {
   padding: 0.5rem 1rem 0;
   font-size: 0.8rem;
+}
+
+.split-hint p {
+  margin: 0 0 0.3rem;
+}
+
+.split-hint ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
 }
 
 .split-hint code {
@@ -643,3 +689,30 @@ body {
   line-height: 1;
   padding: 0 0.2rem;
 }
+
+/* Component link picker */
+
+.component-link-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.component-link-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.component-link-row select {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.component-link-add {
+  padding-top: 0.25rem;
+  border-top: 1px dashed #ddd;
+}
+
