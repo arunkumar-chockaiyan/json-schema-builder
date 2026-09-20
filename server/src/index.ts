@@ -4,6 +4,8 @@ import { registryRoutes } from "./routes/registry.js";
 import { familyRoutes } from "./routes/families.js";
 import { schemaRoutes } from "./routes/schemas.js";
 import { componentRoutes } from "./routes/components.js";
+import { exampleRoutes } from "./routes/examples.js";
+import { extractionRoutes } from "./routes/extraction.js";
 import { RegistryError } from "./types.js";
 
 const app = Fastify({ logger: true });
@@ -23,6 +25,8 @@ await app.register(registryRoutes);
 await app.register(familyRoutes);
 await app.register(schemaRoutes);
 await app.register(componentRoutes);
+await app.register(exampleRoutes);
+await app.register(extractionRoutes);
 
 const PORT = Number(process.env.PORT ?? 3001);
 

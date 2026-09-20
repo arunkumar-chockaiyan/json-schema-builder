@@ -2,10 +2,17 @@ import { useEffect, useState } from "react";
 import { FamilyList } from "./components/FamilyList";
 import { FamilySidebar } from "./components/FamilySidebar";
 import { SchemaEditor } from "./components/SchemaEditor";
+import { NewSchemaForm } from "./components/NewSchemaForm";
+import { ExtractComponentForm } from "./components/ExtractComponentForm";
 import { api } from "./api/client";
 import type { FamilyDetail } from "./types";
 
-export type Selection = { kind: "base" } | { kind: "component"; name: string } | { kind: "schema"; name: string };
+export type Selection =
+  | { kind: "base" }
+  | { kind: "component"; name: string }
+  | { kind: "schema"; name: string }
+  | { kind: "newSchema" }
+  | { kind: "extractComponent" };
 
 export default function App() {
   const [familyName, setFamilyName] = useState<string | null>(null);
@@ -23,10 +30,18 @@ export default function App() {
       .getFamily(familyName)
       .then((detail) => {
         setFamily(detail);
-        setSelection(null);
+        setSelection({ kind: "base" });
       })
       .catch((err) => setError(err.message));
   }, [familyName]);
+
+  // Re-fetches the family's schema/component lists without touching
+  // selection — used after creating a new schema so the sidebar picks it up.
+  const refreshFamily = async () => {
+    if (!familyName) return;
+    const detail = await api.getFamily(familyName);
+    setFamily(detail);
+  };
 
   if (!familyName) {
     return <FamilyList onSelect={setFamilyName} />;
@@ -49,7 +64,25 @@ export default function App() {
         onBack={() => setFamilyName(null)}
       />
       <main className="main-panel">
-        {selection ? (
+        {selection?.kind === "newSchema" ? (
+          <NewSchemaForm
+            family={family}
+            onCreated={async (name) => {
+              await refreshFamily();
+              setSelection({ kind: "schema", name });
+            }}
+            onCancel={() => setSelection(null)}
+          />
+        ) : selection?.kind === "extractComponent" ? (
+          <ExtractComponentForm
+            family={family}
+            onExtracted={async (name) => {
+              await refreshFamily();
+              setSelection({ kind: "component", name });
+            }}
+            onCancel={() => setSelection(null)}
+          />
+        ) : selection ? (
           <SchemaEditor family={family.name} selection={selection} />
         ) : (
           <div className="panel">Select the base config, a component, or a schema from the sidebar.</div>

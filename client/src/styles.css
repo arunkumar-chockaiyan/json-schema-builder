@@ -174,4 +174,450 @@ body {
   border-bottom: 1px solid #f0e0a0;
   padding: 0.5rem 1rem;
   font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.enable-edit-button {
+  margin-left: auto;
+  background: #b45309;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.enable-edit-button:hover {
+  background: #92400e;
+}
+
+.rules-tab {
+  padding: 1rem 1.25rem;
+  overflow-y: auto;
+  height: 70vh;
+}
+
+.rules-tab h4 {
+  margin: 1.5rem 0 0.5rem;
+}
+
+.rule-builder {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.rule-card {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.rule-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.rule-label {
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: #555;
+  min-width: 90px;
+}
+
+.rule-row select,
+.rule-row input[type="text"],
+.rule-row input[type="number"] {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.9rem;
+}
+
+.link-button.danger {
+  color: #b00020;
+}
+
+.add-rule-button {
+  align-self: flex-start;
+  background: #2b6cb0;
+  color: white;
+  border: none;
+  padding: 0.4rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.add-rule-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.rule-graph {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.rule-graph-item {
+  background: white;
+  border: 1px solid #eee;
+  border-radius: 6px;
+}
+
+.rule-graph-item.editing {
+  border-color: #2b6cb0;
+  box-shadow: 0 0 0 1px #2b6cb0;
+}
+
+.rule-graph-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0.75rem;
+}
+
+.rule-graph-item.editing .rule-graph-row {
+  border-bottom: 1px solid #e2ebfa;
+}
+
+.rule-row-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.rule-icon-button {
+  background: none;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  width: 1.8rem;
+  height: 1.8rem;
+  cursor: pointer;
+  color: #555;
+  font-size: 0.9rem;
+}
+
+.rule-icon-button:hover {
+  background: #f0f6ff;
+  border-color: #2b6cb0;
+  color: #2b6cb0;
+}
+
+.rule-icon-danger:hover {
+  background: #fff0f0;
+  border-color: #b00020;
+  color: #b00020;
+}
+
+/* Nested inside .rule-graph-item, which already provides the border, so the
+   editor card itself goes borderless — one rectangle, not two. */
+.rule-card-editing {
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+}
+
+.rule-editor-actions {
+  justify-content: space-between;
+  border-top: 1px solid #eee;
+  padding-top: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.graph-node {
+  padding: 0.2rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.graph-node-when {
+  background: #e6f0ff;
+  color: #1d4ed8;
+}
+
+.graph-node-then {
+  background: #e6ffed;
+  color: #15803d;
+}
+
+.graph-node-forbid {
+  background: #ffe6e6;
+  color: #b00020;
+}
+
+.rule-hint {
+  font-size: 0.75rem;
+  flex-basis: 100%;
+}
+
+.graph-node-group {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.graph-edge {
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.compiled-preview {
+  background: #1f2430;
+  color: #d8dee9;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-size: 0.8rem;
+}
+
+.example-tab {
+  padding: 1rem 1.25rem;
+  overflow-y: auto;
+  height: 60vh;
+}
+
+.example-selector {
+  margin-bottom: 0.75rem;
+}
+
+.example-selector select {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+/* Two-pane schema editor */
+
+.editor-split {
+  display: flex;
+  gap: 1px;
+  background: #ddd;
+  flex: 1;
+  overflow: hidden;
+}
+
+.editor-split-left,
+.editor-split-right {
+  flex: 1;
+  min-width: 0;
+  background: white;
+  display: flex;
+  flex-direction: column;
+}
+
+.editor-split-left .tabs,
+.editor-split-right .tabs {
+  padding: 0.5rem 1rem 0;
+  border-bottom: 1px solid #eee;
+}
+
+.split-hint {
+  padding: 0.5rem 1rem 0;
+  font-size: 0.8rem;
+}
+
+.split-hint code {
+  background: #f2f2f2;
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+}
+
+.tree-item.new-item {
+  color: #9db4ff;
+  font-weight: 600;
+  margin-top: 0.25rem;
+}
+
+.new-schema-form {
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: 700px;
+}
+
+.new-schema-name {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-weight: 600;
+  font-size: 0.85rem;
+  max-width: 300px;
+}
+
+.new-schema-name input {
+  font-weight: normal;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.95rem;
+}
+
+/* JsonTree */
+
+.json-tree {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  overflow: hidden;
+}
+
+.json-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid #f2f2f2;
+}
+
+.json-tree-row.selectable {
+  cursor: pointer;
+}
+
+.json-tree-row.selectable:hover {
+  background: #f0f6ff;
+}
+
+.json-tree-row.selected {
+  background: #e6f0ff;
+}
+
+.json-tree-caret {
+  background: none;
+  border: none;
+  cursor: pointer;
+  width: 1rem;
+  padding: 0;
+  color: #666;
+}
+
+.json-tree-caret-spacer {
+  width: 1rem;
+  display: inline-block;
+}
+
+.json-tree-key {
+  font-weight: 600;
+}
+
+.json-tree-value {
+  color: #1d4ed8;
+}
+
+.json-tree-type {
+  color: #888;
+  font-size: 0.75rem;
+}
+
+.json-tree-enum {
+  color: #7c3aed;
+  font-size: 0.75rem;
+}
+
+.json-tree-summary {
+  color: #999;
+  font-size: 0.75rem;
+}
+
+.json-tree-description {
+  color: #999;
+  font-size: 0.75rem;
+  font-style: italic;
+}
+
+.json-tree-check {
+  color: #15803d;
+  font-weight: 700;
+}
+
+.json-tree-hint {
+  color: #bbb;
+  font-size: 0.7rem;
+  font-style: italic;
+  cursor: default;
+}
+
+.json-tree-children {
+  border-left: 1px dashed #eee;
+  margin-left: 1.25rem;
+}
+
+/* Field pickers (rule builder) */
+
+.field-picker,
+.field-multi-picker {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.field-picker-trigger {
+  background: #eee;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.field-picker-tree {
+  max-width: 420px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: #e6f0ff;
+  color: #1d4ed8;
+  border-radius: 12px;
+  padding: 0.15rem 0.3rem 0.15rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+.chip-remove {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 0 0.2rem;
 }

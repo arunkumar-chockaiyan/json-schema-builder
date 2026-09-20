@@ -43,6 +43,12 @@ export function FamilySidebar({ family, selection, onSelect, onBack }: Props) {
             🧩 {name}
           </button>
         ))}
+        <button
+          className={`tree-item new-item ${selection?.kind === "extractComponent" ? "selected" : ""}`}
+          onClick={() => onSelect({ kind: "extractComponent" })}
+        >
+          + Extract Component
+        </button>
       </div>
 
       <div className="tree-section">
@@ -56,6 +62,12 @@ export function FamilySidebar({ family, selection, onSelect, onBack }: Props) {
             📄 {name}
           </button>
         ))}
+        <button
+          className={`tree-item new-item ${selection?.kind === "newSchema" ? "selected" : ""}`}
+          onClick={() => onSelect({ kind: "newSchema" })}
+        >
+          + New Schema
+        </button>
       </div>
     </nav>
   );

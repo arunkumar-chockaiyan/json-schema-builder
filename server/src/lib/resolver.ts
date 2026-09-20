@@ -10,6 +10,7 @@
 
 import { readBase, readComponent } from "./registryFs.js";
 import { RegistryError } from "../types.js";
+import { compileRules, validateRules, type Rule } from "./rules.js";
 
 const COMPONENT_REF_PATTERN = /^components\/([^/]+)\.schema\.json$/;
 
@@ -40,6 +41,26 @@ export async function resolveSchema(family: string, schemaTitle: string, raw: un
     ? ((resolvedRaw as Record<string, unknown>).required as string[])
     : [];
   merged.required = [...new Set([...baseRequired, ...schemaRequired])];
+
+  // Conditional rules: validate against the fully merged field set, compile
+  // to standard allOf/if/then for the resolved output, and strip the
+  // structured x-rules (an authoring-only, round-trippable representation)
+  // from what validators/consumers see.
+  const rules = Array.isArray((merged as Record<string, unknown>)["x-rules"])
+    ? ((merged as Record<string, unknown>)["x-rules"] as Rule[])
+    : [];
+  delete merged["x-rules"];
+  // x-example-source (the annotated example text) is authoring-only too —
+  // strip it from what validators/consumers see, same as x-rules above.
+  delete merged["x-example-source"];
+
+  if (rules.length > 0) {
+    const availableFields = new Set(Object.keys(merged.properties as Record<string, unknown>));
+    validateRules(rules, availableFields);
+    const compiled = compileRules(rules);
+    const existingAllOf = Array.isArray(merged.allOf) ? (merged.allOf as unknown[]) : [];
+    merged.allOf = [...existingAllOf, ...compiled];
+  }
 
   return merged;
 }

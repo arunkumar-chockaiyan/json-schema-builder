@@ -31,9 +31,20 @@ function basePath(family: string): string {
   return path.join(familyDir(family), "base.schema.json");
 }
 
+function testCasesDir(family: string, schema: string): string {
+  assertSafeSegment(schema);
+  return path.join(familyDir(family), "tests", schema);
+}
+
+function testCasePath(family: string, schema: string, name: string): string {
+  assertSafeSegment(name);
+  return path.join(testCasesDir(family, schema), `${name}.json`);
+}
+
 // Guard against path traversal via family/schema/component names coming from
-// route params.
-function assertSafeSegment(segment: string): void {
+// route params. Exported so callers constructing a *new* name (e.g. schema
+// creation, component extraction) can validate before ever touching the fs.
+export function assertSafeSegment(segment: string): void {
   if (!segment || segment.includes("/") || segment.includes("\\") || segment.includes("..")) {
     throw new RegistryError(`Invalid path segment: "${segment}"`, 400);
   }
@@ -95,6 +106,10 @@ export async function readBase(family: string): Promise<unknown> {
   return readJson(basePath(family));
 }
 
+export async function writeBase(family: string, content: unknown): Promise<void> {
+  await writeJson(basePath(family), content);
+}
+
 export async function readSchema(family: string, schema: string): Promise<unknown> {
   return readJson(schemaPath(family, schema));
 }
@@ -123,4 +138,21 @@ export function absoluteComponentPath(family: string, component: string): string
 
 export function familyComponentsDir(family: string): string {
   return path.join(familyDir(family), "components");
+}
+
+export async function listTestCases(family: string, schema: string): Promise<string[]> {
+  try {
+    const entries = await fs.readdir(testCasesDir(family, schema));
+    return entries
+      .filter((f) => f.endsWith(".json"))
+      .map((f) => f.replace(/\.json$/, ""))
+      .sort();
+  } catch (err: unknown) {
+    if (isNodeError(err) && err.code === "ENOENT") return [];
+    throw err;
+  }
+}
+
+export async function readTestCase(family: string, schema: string, name: string): Promise<unknown> {
+  return readJson(testCasePath(family, schema, name));
 }

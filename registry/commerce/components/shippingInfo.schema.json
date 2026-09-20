@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "commerce.shippingInfo",
+  "type": "object",
+  "properties": {
+    "method": {
+      "type": "string"
+    },
+    "instructions": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "method"
+  ],
+  "description": "Delivery instructions for this order."
+}

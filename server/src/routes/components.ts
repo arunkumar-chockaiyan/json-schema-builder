@@ -8,6 +8,7 @@ import {
   writeComponent,
 } from "../lib/registryFs.js";
 import { findUsages, resolveComponent } from "../lib/resolver.js";
+import { generateFullExample } from "../lib/exampleGenerator.js";
 import { logForPath } from "../lib/git.js";
 import { RegistryError } from "../types.js";
 
@@ -38,6 +39,18 @@ export async function componentRoutes(app: FastifyInstance): Promise<void> {
       const { family, component } = req.params;
       const commits = await logForPath(absoluteComponentPath(family, component));
       return { commits };
+    },
+  );
+
+  // Single synthesized example — same generator used for a schema's "Full
+  // (generated)" example, computed on demand rather than persisted.
+  app.get<{ Params: { family: string; component: string } }>(
+    "/api/families/:family/components/:component/example",
+    async (req) => {
+      const { family, component } = req.params;
+      const raw = await readComponent(family, component);
+      const resolved = await resolveComponent(family, raw);
+      return generateFullExample(resolved);
     },
   );
 

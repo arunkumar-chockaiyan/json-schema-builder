@@ -5,15 +5,42 @@
   "properties": {
     "amount": {
       "type": "number",
-      "minimum": 0
+      "description": "Order total before tax, in the currency listed below"
     },
     "currency": {
+      "type": "string"
+    },
+    "type": {
       "type": "string",
-      "description": "ISO 4217 currency code, e.g. USD."
+      "enum": [
+        "standard",
+        "express"
+      ],
+      "description": "Shipping speed for this order."
+    },
+    "paymentMethod": {
+      "type": "string",
+      "enum": [
+        "card",
+        "check"
+      ],
+      "description": "How this order was paid for."
+    },
+    "shippingInfo": {
+      "$ref": "components/shippingInfo.schema.json"
     },
     "contact": {
       "$ref": "components/contact.schema.json"
     }
   },
-  "required": ["amount", "currency", "contact"]
+  "required": [
+    "amount",
+    "currency",
+    "type",
+    "paymentMethod",
+    "shippingInfo",
+    "contact"
+  ],
+  "x-rules": [],
+  "x-example-source": "{\n  \"id\": \"8f14e45f-ceea-467e-9575-8e18c1eae7a3\",\n  \"createdAt\": \"2026-09-19T12:00:00Z\",\n  \"tenantId\": \"tenant-001\",\n  \"region\": \"us-east\",\n  \"details\": {},  -- Order-specific extra data; shape is up to this schema.\n  \"amount\": 129.99,  -- Order total before tax, in the currency listed below\n  \"currency\": \"USD\",\n  \"type\": \"standard,express\",  -- Shipping speed for this order.\n  \"paymentMethod\": \"card,check\",  -- How this order was paid for.\n  \"shippingInfo\": {\n    \"method\": \"standard\"\n  },\n  \"contact\": {\n    \"name\": \"Jane Doe\",\n    \"email\": \"jane@example.com\"\n  }\n}"
 }

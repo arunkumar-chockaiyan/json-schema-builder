@@ -16,7 +16,22 @@
     "tenantId": {
       "type": "string",
       "description": "Owning tenant identifier."
+    },
+    "region": {
+      "type": "string",
+      "description": "Data residency region."
+    },
+    "details": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Schema-specific extra data. Shape varies per schema — base only requires the object itself to be present."
     }
   },
-  "required": ["id", "createdAt", "tenantId"]
+  "required": [
+    "id",
+    "createdAt",
+    "tenantId",
+    "region",
+    "details"
+  ]
 }

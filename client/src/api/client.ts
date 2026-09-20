@@ -18,6 +18,16 @@ export const api = {
 
   getFamily: (family: string) => request<FamilyDetail>(`/families/${family}`),
 
+  getBase: (family: string) => request<RawAndResolved>(`/families/${family}/base`),
+
+  getBaseExample: (family: string) => request<unknown>(`/families/${family}/base/example`),
+
+  saveBase: (family: string, content: unknown) =>
+    request<void>(`/families/${family}/base`, {
+      method: "PUT",
+      body: JSON.stringify(content),
+    }),
+
   getSchema: (family: string, schema: string) =>
     request<RawAndResolved>(`/families/${family}/schemas/${schema}`),
 
@@ -30,9 +40,33 @@ export const api = {
   getComponent: (family: string, component: string) =>
     request<ComponentDetail>(`/families/${family}/components/${component}`),
 
+  getComponentExample: (family: string, component: string) =>
+    request<unknown>(`/families/${family}/components/${component}/example`),
+
   saveComponent: (family: string, component: string, content: unknown) =>
     request<void>(`/families/${family}/components/${component}`, {
       method: "PUT",
       body: JSON.stringify(content),
+    }),
+
+  listExamples: (family: string, schema: string) =>
+    request<{ names: string[] }>(`/families/${family}/schemas/${schema}/examples`),
+
+  getExample: (family: string, schema: string, name: string) =>
+    request<unknown>(`/families/${family}/schemas/${schema}/examples/${name}`),
+
+  getGeneratedExample: (family: string, schema: string) =>
+    request<unknown>(`/families/${family}/schemas/${schema}/examples/_generated`),
+
+  getPrimaryExample: (family: string, schema: string) =>
+    request<unknown>(`/families/${family}/schemas/${schema}/examples/_primary`),
+
+  extractComponent: (
+    family: string,
+    body: { sourceType: "base" | "schema"; sourceName?: string; path: string[]; componentName: string },
+  ) =>
+    request<void>(`/families/${family}/extract-component`, {
+      method: "POST",
+      body: JSON.stringify(body),
     }),
 };
