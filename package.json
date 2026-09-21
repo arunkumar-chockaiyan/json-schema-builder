@@ -12,6 +12,7 @@
     "build": "npm run build -w server && npm run build -w client"
   },
   "devDependencies": {
+    "@playwright/mcp": "^0.0.82",
     "concurrently": "^9.1.0"
   }
 }

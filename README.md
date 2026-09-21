@@ -29,6 +29,8 @@ npm run dev
 
 Open `http://localhost:5173`. The API server runs on port `3001`. The Vite dev server forwards `/api` requests to it.
 
+See [docs/demos/schema-builder-walkthrough.html](docs/demos/schema-builder-walkthrough.html) for a screenshot walkthrough of authoring a schema and linking it to a component.
+
 ## Project structure
 
 ```
